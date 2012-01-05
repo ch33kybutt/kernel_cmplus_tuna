@@ -591,4 +591,10 @@ config SOUND_CONTROL
 	help
 	  Enable support for Sound Control
 
+config TOUCH_WAKE
+	bool "Support for Touch Wake"
+	default y
+	help
+	  Say Y here to enable Touch Wake
+
 endif # MISC_DEVICES
