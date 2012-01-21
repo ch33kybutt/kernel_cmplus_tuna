@@ -19,6 +19,8 @@
 #ifndef __LINUX_EHCI_HCD_H
 #define __LINUX_EHCI_HCD_H
 
+#define DEBUG
+
 /* definitions used for the EHCI driver */
 
 /*
@@ -745,9 +747,6 @@ static inline u32 hc32_to_cpup (const struct ehci_hcd *ehci, const __hc32 *x)
 
 /*-------------------------------------------------------------------------*/
 
-<<<<<<< HEAD
-#if 0
-=======
 #ifdef CONFIG_PCI
 
 /* For working around the MosChip frame-index-register bug */
@@ -760,15 +759,13 @@ static inline unsigned ehci_read_frame_index(struct ehci_hcd *ehci)
 	return ehci_readl(ehci, &ehci->regs->frame_index);
 }
 
-#endif
+#endif /* CONFIG_PCI */
 
 /*-------------------------------------------------------------------------*/
 
->>>>>>> linux-3.0.y
 #ifndef DEBUG
 #define STUB_DEBUG_FILES
 #endif	/* DEBUG */
-#endif
 
 /*-------------------------------------------------------------------------*/
 
