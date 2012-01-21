@@ -1,6 +1,6 @@
 #
 # Automatically generated make config: don't edit
-# Linux/arm 3.0.8 Kernel Configuration
+# Linux/arm 3.0.17 Kernel Configuration
 #
 CONFIG_ARM=y
 CONFIG_HAVE_PWM=y
@@ -387,6 +387,7 @@ CONFIG_FIQ_DEBUGGER_CONSOLE=y
 # CONFIG_ARCH_SUPPORTS_MSI is not set
 # CONFIG_PCCARD is not set
 CONFIG_ARM_ERRATA_764369=y
+# CONFIG_PL310_ERRATA_769419 is not set
 
 #
 # Kernel Features
