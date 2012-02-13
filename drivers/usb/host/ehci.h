@@ -19,8 +19,6 @@
 #ifndef __LINUX_EHCI_HCD_H
 #define __LINUX_EHCI_HCD_H
 
-#define DEBUG
-
 /* definitions used for the EHCI driver */
 
 /*
@@ -144,7 +142,6 @@ struct ehci_hcd {			/* one per controller */
 	/* Transceiver QUIRKS */
 	unsigned		has_smsc_ulpi_bug:1; /* Smsc */
 	unsigned		resume_error_flag:1; /* Smsc */
-
 	unsigned		frame_index_bug:1; /* MosChip (AKA NetMos) */
 
 	/* required for usb32 quirk */
@@ -759,13 +756,15 @@ static inline unsigned ehci_read_frame_index(struct ehci_hcd *ehci)
 	return ehci_readl(ehci, &ehci->regs->frame_index);
 }
 
-#endif /* CONFIG_PCI */
+#endif
 
 /*-------------------------------------------------------------------------*/
 
+#if 0
 #ifndef DEBUG
 #define STUB_DEBUG_FILES
 #endif	/* DEBUG */
+#endif
 
 /*-------------------------------------------------------------------------*/
 
