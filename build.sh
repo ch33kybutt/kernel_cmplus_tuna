@@ -36,7 +36,7 @@ build ()
     local module
     [ x = "x$NO_RM" ] && rm -fr "$target_dir"
     mkdir -p "$target_dir"
-    [ x = "x$NO_DEFCONFIG" ] && mka -C "$KERNEL_DIR" O="$target_dir" ARCH=arm cyanogenmod_${BOARD}_defconfig HOSTCC="$CCACHE gcc"
+    [ x = "x$NO_DEFCONFIG" ] && mka -C "$KERNEL_DIR" O="$target_dir" ARCH=arm ${BOARD}_defconfig HOSTCC="$CCACHE gcc"
     if [ x = "x$NO_BUILD" ] ; then
         mka -C "$KERNEL_DIR" O="$target_dir" ARCH=arm HOSTCC="$CCACHE gcc" CROSS_COMPILE="$CCACHE $CROSS_PREFIX" modules
         mka -C "$KERNEL_DIR" O="$target_dir" ARCH=arm HOSTCC="$CCACHE gcc" CROSS_COMPILE="$CCACHE $CROSS_PREFIX" zImage
@@ -56,7 +56,7 @@ fi
 
 targets=("$@")
 if [ 0 = "${#targets[@]}" ] ; then
-    targets=(tuna maguro)
+    targets=(tuna)
 fi
 
 START=$(date +%s)
