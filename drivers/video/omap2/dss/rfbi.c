@@ -128,27 +128,9 @@ static int rfbi_runtime_get(void)
 
 	DSSDBG("rfbi_runtime_get\n");
 
-	r = dss_runtime_get();
-	if (r)
-		goto err_get_dss;
-
-	r = dispc_runtime_get();
-	if (r)
-		goto err_get_dispc;
-
 	r = pm_runtime_get_sync(&rfbi.pdev->dev);
-	WARN_ON(r);
-	if (r < 0)
-		goto err_runtime_get;
-
-	return 0;
-
-err_runtime_get:
-	dispc_runtime_put();
-err_get_dispc:
-	dss_runtime_put();
-err_get_dss:
-	return r;
+	WARN_ON(r < 0);
+	return r < 0 ? r : 0;
 }
 
 static void rfbi_runtime_put(void)
@@ -157,11 +139,8 @@ static void rfbi_runtime_put(void)
 
 	DSSDBG("rfbi_runtime_put\n");
 
-	r = pm_runtime_put_sync(&rfbi.pdev->dev);
-	WARN_ON(r);
-
-	dispc_runtime_put();
-	dss_runtime_put();
+	r = pm_runtime_put(&rfbi.pdev->dev);
+	WARN_ON(r < 0);
 }
 
 void rfbi_bus_lock(void)
@@ -973,9 +952,12 @@ static int omap_rfbihw_probe(struct platform_device *pdev)
 
 	msleep(10);
 
-	clk = clk_get(&pdev->dev, "rfbi_iclk");
+	if (cpu_is_omap24xx() || cpu_is_omap34xx() || cpu_is_omap3630())
+		clk = dss_get_ick();
+	else
+		clk = clk_get(&pdev->dev, "ick");
 	if (IS_ERR(clk)) {
-		DSSERR("can't get rfbi_iclk\n");
+		DSSERR("can't get ick\n");
 		r = PTR_ERR(clk);
 		goto err_get_ick;
 	}
@@ -1008,12 +990,46 @@ static int omap_rfbihw_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int rfbi_runtime_suspend(struct device *dev)
+{
+	dispc_runtime_put();
+	dss_runtime_put();
+
+	return 0;
+}
+
+static int rfbi_runtime_resume(struct device *dev)
+{
+	int r;
+
+	r = dss_runtime_get();
+	if (r < 0)
+		goto err_get_dss;
+
+	r = dispc_runtime_get();
+	if (r < 0)
+		goto err_get_dispc;
+
+	return 0;
+
+err_get_dispc:
+	dss_runtime_put();
+err_get_dss:
+	return r;
+}
+
+static const struct dev_pm_ops rfbi_pm_ops = {
+	.runtime_suspend = rfbi_runtime_suspend,
+	.runtime_resume = rfbi_runtime_resume,
+};
+
 static struct platform_driver omap_rfbihw_driver = {
 	.probe          = omap_rfbihw_probe,
 	.remove         = omap_rfbihw_remove,
 	.driver         = {
 		.name   = "omapdss_rfbi",
 		.owner  = THIS_MODULE,
+		.pm	= &rfbi_pm_ops,
 	},
 };
 

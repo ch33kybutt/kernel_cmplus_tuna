@@ -3,8 +3,8 @@
 #
 
 # Common support
-obj-y := id.o io.o control.o mux.o devices.o serial.o gpmc.o timer-gp.o pm.o \
-	 common.o gpio.o dma.o wd_timer.o omap_pmic.o dmtimer.o
+obj-y := id.o io.o control.o mux.o devices.o serial.o gpmc.o timer.o pm.o \
+	 common.o gpio.o dma.o wd_timer.o
 
 omap-2-3-common				= irq.o sdrc.o
 hwmod-common				= omap_hwmod.o \
@@ -162,9 +162,19 @@ obj-$(CONFIG_SOC_OMAP2420)		+= opp2420_data.o
 obj-$(CONFIG_SOC_OMAP2430)		+= opp2430_data.o
 
 # hwmod data
-obj-$(CONFIG_SOC_OMAP2420)		+= omap_hwmod_2420_data.o
-obj-$(CONFIG_SOC_OMAP2430)		+= omap_hwmod_2430_data.o
-obj-$(CONFIG_ARCH_OMAP3)		+= omap_hwmod_3xxx_data.o
+obj-$(CONFIG_SOC_OMAP2420)		+= omap_hwmod_2xxx_ipblock_data.o \
+					   omap_hwmod_2xxx_3xxx_ipblock_data.o \
+					   omap_hwmod_2xxx_interconnect_data.o \
+					   omap_hwmod_2xxx_3xxx_interconnect_data.o \
+					   omap_hwmod_2420_data.o
+obj-$(CONFIG_SOC_OMAP2430)		+= omap_hwmod_2xxx_ipblock_data.o \
+					   omap_hwmod_2xxx_3xxx_ipblock_data.o \
+					   omap_hwmod_2xxx_interconnect_data.o \
+					   omap_hwmod_2xxx_3xxx_interconnect_data.o \
+					   omap_hwmod_2430_data.o
+obj-$(CONFIG_ARCH_OMAP3)		+= omap_hwmod_2xxx_3xxx_ipblock_data.o \
+					   omap_hwmod_2xxx_3xxx_interconnect_data.o \
+					   omap_hwmod_3xxx_data.o
 obj-$(CONFIG_ARCH_OMAP4)		+= omap_hwmod_44xx_data.o
 
 # EMU peripherals
@@ -304,10 +314,4 @@ obj-$(CONFIG_ARCH_OMAP4)		+= hwspinlock.o
 disp-$(CONFIG_OMAP2_DSS)		:= display.o
 obj-y					+= $(disp-m) $(disp-y)
 
-obj-y					+= common-board-devices.o
-
-obj-$(CONFIG_OMAP_REMOTE_PROC)		+= remoteproc.o
-obj-$(CONFIG_OMAP_HSI_DEVICE)		+= omap_hsi.o
-obj-$(CONFIG_SEC_MODEM)			+= board-tuna-modems.o
-obj-$(CONFIG_ARCH_OMAP4)		+= omap_dmm.o
-obj-$(CONFIG_OMAP_FIQ_DEBUGGER)		+= omap_fiq_debugger.o
+obj-y					+= common-board-devices.o twl-common.o

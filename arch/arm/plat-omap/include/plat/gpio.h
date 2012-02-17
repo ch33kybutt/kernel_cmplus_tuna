@@ -177,25 +177,10 @@ struct omap_gpio_reg_offs {
 	u16 irqstatus;
 	u16 irqstatus2;
 	u16 irqenable;
-	u16 irqenable2;
 	u16 set_irqenable;
 	u16 clr_irqenable;
 	u16 debounce;
 	u16 debounce_en;
-	u16 ctrl;
-	u16 wkup_status;
-	u16 wkup_clear;
-	u16 wkup_set;
-	u16 leveldetect0;
-	u16 leveldetect1;
-	u16 risingdetect;
-	u16 fallingdetect;
-	u16 irqctrl;
-	u16 edgectrl1;
-	u16 edgectrl2;
-	/* Not applicable for OMAP2+ as hwmod layer takes care of sysconfig */
-	u16 sysconfig;
-	u16 pinctrl;
 
 	bool irqenable_inv;
 };
@@ -206,9 +191,9 @@ struct omap_gpio_platform_data {
 	int bank_stride;	/* Only needed for omap1 MPUIO */
 	bool suspend_support;	/* If Bank supports suspend/resume operations */
 	bool dbck_flag;		/* dbck required or not - True for OMAP3&4 */
-	bool loses_context;	/* whether the bank would ever lose context */
-	bool is_mpuio;		/* whether the bank is of type MPUIO */
-	u32 non_wakeup_gpios;
+
+	struct omap_gpio_reg_offs *regs;
+};
 
 	struct omap_gpio_reg_offs *regs;
 };

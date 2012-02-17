@@ -24,12 +24,10 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/pm.h>
-#include <linux/i2c.h>
-#include <linux/gpio.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/i2c/twl.h>
-#include <linux/mfd/twl6040-codec.h>
+#include <linux/mfd/twl6040.h>
 
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -80,19 +78,19 @@ struct twl6040_jack_data {
 
 /* codec private data */
 struct twl6040_data {
+	int plug_irq;
 	int codec_powered;
 	int pll;
 	int non_lp;
-	int power_mode_forced;
-	int headset_mode;
+	int pll_power_mode;
+	int hs_power_mode;
+	int hs_power_mode_locked;
 	unsigned int clk_in;
 	unsigned int sysclk;
 	u16 hs_left_step;
 	u16 hs_right_step;
 	u16 hf_left_step;
 	u16 hf_right_step;
-	u16 ep_step;
-	struct snd_pcm_hw_constraint_list *sysclk_constraints;
 	struct twl6040_jack_data hs_jack;
 	struct snd_soc_codec *codec;
 	struct workqueue_struct *workqueue;
@@ -217,6 +215,32 @@ static const u8 twl6040_reg_supply[TWL6040_CACHEREGNUM] = {
 	TWL6040_VIO_SUPPLY, /* TWL6040_STATUS (ro)	*/
 };
 
+/* set of rates for each pll: low-power and high-performance */
+static unsigned int lp_rates[] = {
+	8000,
+	11250,
+	16000,
+	22500,
+	32000,
+	44100,
+	48000,
+	88200,
+	96000,
+};
+
+static unsigned int hp_rates[] = {
+	8000,
+	16000,
+	32000,
+	48000,
+	96000,
+};
+
+static struct snd_pcm_hw_constraint_list sysclk_constraints[] = {
+	{ .count = ARRAY_SIZE(lp_rates), .list = lp_rates, },
+	{ .count = ARRAY_SIZE(hp_rates), .list = hp_rates, },
+};
+
 /*
  * read twl6040 register cache
  */
@@ -251,16 +275,10 @@ static int twl6040_read_reg_volatile(struct snd_soc_codec *codec,
 					unsigned int reg)
 {
 	struct twl6040 *twl6040 = codec->control_data;
-	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-	u8 value = 0;
+	u8 value;
 
 	if (reg >= TWL6040_CACHEREGNUM)
 		return -EIO;
-
-	/* read access not supported while in sleep state */
-	if ((twl6040_reg_supply[reg] == TWL6040_VDD_SUPPLY) &&
-		!priv->codec_powered)
-		return -EINVAL;
 
 	value = twl6040_reg_read(twl6040, reg);
 	twl6040_write_reg_cache(codec, reg, value);
@@ -275,22 +293,12 @@ static int twl6040_write(struct snd_soc_codec *codec,
 			unsigned int reg, unsigned int value)
 {
 	struct twl6040 *twl6040 = codec->control_data;
-	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-	int ret = 0;
 
 	if (reg >= TWL6040_CACHEREGNUM)
 		return -EIO;
 
 	twl6040_write_reg_cache(codec, reg, value);
-
-	if ((twl6040_reg_supply[reg] == TWL6040_VIO_SUPPLY) ||
-		priv->codec_powered)
-		ret = twl6040_reg_write(twl6040, reg, value);
-	else
-		dev_dbg(codec->dev, "deferring register 0x%02x write: %02x\n",
-			reg, value);
-
-	return ret;
+	return twl6040_reg_write(twl6040, reg, value);
 }
 
 static void twl6040_init_vio_regs(struct snd_soc_codec *codec)
@@ -298,9 +306,8 @@ static void twl6040_init_vio_regs(struct snd_soc_codec *codec)
 	u8 *cache = codec->reg_cache;
 	int reg;
 
-	for (reg = 0; reg < TWL6040_CACHEREGNUM; reg++) {
-		if (twl6040_reg_supply[reg] != TWL6040_VIO_SUPPLY)
-			continue;
+	for (i = 0; i < TWL6040_VIOREGNUM; i++) {
+		reg = twl6040_vio_reg[i];
 		/*
 		 * skip read-only registers (ASICID, ASICREV, STATUS)
 		 * and registers shared among MFD children
@@ -332,10 +339,9 @@ static void twl6040_init_vdd_regs(struct snd_soc_codec *codec)
 	u8 *cache = codec->reg_cache;
 	int reg;
 
-	for (reg = 0; reg < TWL6040_CACHEREGNUM; reg++) {
-		if (twl6040_reg_supply[reg] != TWL6040_VDD_SUPPLY)
-			continue;
-		/* skip vibra and pll registers */
+	for (i = 0; i < TWL6040_VDDREGNUM; i++) {
+		reg = twl6040_vdd_reg[i];
+		/* skip vibra and PLL registers */
 		switch (reg) {
 		case TWL6040_REG_VIBCTLL:
 		case TWL6040_REG_VIBDATL:
@@ -348,6 +354,7 @@ static void twl6040_init_vdd_regs(struct snd_soc_codec *codec)
 		default:
 			break;
 		}
+
 		twl6040_write(codec, reg, cache[reg]);
 	}
 }
@@ -822,16 +829,16 @@ static int twl6040_power_mode_event(struct snd_soc_dapm_widget *w,
 
 	if (SND_SOC_DAPM_EVENT_ON(event)) {
 		priv->non_lp++;
-		if (!strcmp(w->name, "Earphone Enable")) {
+		if (!strcmp(w->name, "Earphone Driver")) {
 			/* Earphone doesn't support low power mode */
-			priv->power_mode_forced = 1;
+			priv->hs_power_mode_locked = 1;
 			ret = headset_power_mode(codec, 1);
 		}
 	} else {
 		priv->non_lp--;
-		if (!strcmp(w->name, "Earphone Enable")) {
-			priv->power_mode_forced = 0;
-			ret = headset_power_mode(codec, priv->headset_mode);
+		if (!strcmp(w->name, "Earphone Driver")) {
+			priv->hs_power_mode_locked = 0;
+			ret = headset_power_mode(codec, priv->hs_power_mode);
 		}
 	}
 
@@ -893,7 +900,7 @@ static irqreturn_t twl6040_audio_handler(int irq, void *data)
 
 	if ((intid & TWL6040_PLUGINT) || (intid & TWL6040_UNPLUGINT))
 		queue_delayed_work(priv->workqueue, &priv->delayed_work,
-				   msecs_to_jiffies(200));
+							msecs_to_jiffies(200));
 
 	return IRQ_HANDLED;
 }
@@ -1122,13 +1129,13 @@ static const struct snd_kcontrol_new ep_driver_switch_controls =
 	SOC_DAPM_SINGLE("Switch", TWL6040_REG_EARCTL, 0, 1, 0);
 
 /* Headset power mode */
-static const char *twl6040_headset_power_texts[] = {
-	"Low-Power", "High-Performance",
+static const char *twl6040_power_mode_texts[] = {
+	"Low-Power", "High-Perfomance",
 };
 
-static const struct soc_enum twl6040_headset_power_enum =
-	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(twl6040_headset_power_texts),
-			twl6040_headset_power_texts);
+static const struct soc_enum twl6040_power_mode_enum =
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(twl6040_power_mode_texts),
+			twl6040_power_mode_texts);
 
 static int twl6040_headset_power_get_enum(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
@@ -1136,7 +1143,7 @@ static int twl6040_headset_power_get_enum(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
 
-	ucontrol->value.enumerated.item[0] = priv->headset_mode;
+	ucontrol->value.enumerated.item[0] = priv->hs_power_mode;
 
 	return 0;
 }
@@ -1147,17 +1154,46 @@ static int twl6040_headset_power_put_enum(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
 	int high_perf = ucontrol->value.enumerated.item[0];
-	int ret;
+	int ret = 0;
 
-	if (priv->power_mode_forced)
-		return -EPERM;
+	if (!priv->hs_power_mode_locked)
+		ret = headset_power_mode(codec, high_perf);
 
-	ret = headset_power_mode(codec, high_perf);
 	if (!ret)
-		priv->headset_mode = high_perf;
+		priv->hs_power_mode = high_perf;
 
 	return ret;
 }
+
+static int twl6040_pll_get_enum(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.enumerated.item[0] = priv->pll_power_mode;
+
+	return 0;
+}
+
+static int twl6040_pll_put_enum(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
+
+	priv->pll_power_mode = ucontrol->value.enumerated.item[0];
+
+	return 0;
+}
+
+int twl6040_get_clk_id(struct snd_soc_codec *codec)
+{
+	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
+
+	return priv->pll_power_mode;
+}
+EXPORT_SYMBOL_GPL(twl6040_get_clk_id);
 
 static const struct snd_kcontrol_new twl6040_snd_controls[] = {
 	/* Capture gains */
@@ -1171,19 +1207,19 @@ static const struct snd_kcontrol_new twl6040_snd_controls[] = {
 		TWL6040_REG_LINEGAIN, 0, 3, 7, 0, afm_amp_tlv),
 
 	/* Playback gains */
-	SOC_DOUBLE_EXT_TLV("Headset Playback Volume",
-		TWL6040_REG_HSGAIN, 0, 4, 0xF, 1,
-		twl6040_get_volsw, twl6040_put_volsw, hs_tlv),
-	SOC_DOUBLE_R_EXT_TLV("Handsfree Playback Volume",
-		TWL6040_REG_HFLGAIN, TWL6040_REG_HFRGAIN, 0, 0x1D, 1,
-		twl6040_get_volsw_2r, twl6040_put_volsw_2r_vu, hf_tlv),
-	SOC_SINGLE_EXT_TLV("Earphone Playback Volume",
-		TWL6040_REG_EARCTL, 1, 0xF, 1,
-		twl6040_get_volsw, twl6040_put_volsw, ep_tlv),
+	SOC_TWL6040_DOUBLE_TLV("Headset Playback Volume",
+		TWL6040_REG_HSGAIN, 0, 4, 0xF, 1, hs_tlv),
+	SOC_TWL6040_DOUBLE_R_TLV("Handsfree Playback Volume",
+		TWL6040_REG_HFLGAIN, TWL6040_REG_HFRGAIN, 0, 0x1D, 1, hf_tlv),
+	SOC_SINGLE_TLV("Earphone Playback Volume",
+		TWL6040_REG_EARCTL, 1, 0xF, 1, ep_tlv),
 
-	SOC_ENUM_EXT("Headset Power Mode", twl6040_headset_power_enum,
+	SOC_ENUM_EXT("Headset Power Mode", twl6040_power_mode_enum,
 		twl6040_headset_power_get_enum,
 		twl6040_headset_power_put_enum),
+
+	SOC_ENUM_EXT("PLL Selection", twl6040_power_mode_enum,
+		twl6040_pll_get_enum, twl6040_pll_put_enum),
 };
 
 static const struct snd_soc_dapm_widget twl6040_dapm_widgets[] = {
@@ -1362,38 +1398,12 @@ static int twl6040_add_widgets(struct snd_soc_codec *codec)
 	return 0;
 }
 
-/* set of rates for each pll: low-power and high-performance */
-
-static unsigned int lp_rates[] = {
-	8000,
-	11250,
-	16000,
-	22500,
-	32000,
-	44100,
-	48000,
-	88200,
-	96000,
-};
-
-static struct snd_pcm_hw_constraint_list lp_constraints = {
-	.count	= ARRAY_SIZE(lp_rates),
-	.list	= lp_rates,
-};
-
-static unsigned int hp_rates[] = {
-	8000,
-	16000,
-	32000,
-	48000,
-	96000,
-};
-
 static int twl6040_set_bias_level(struct snd_soc_codec *codec,
 				enum snd_soc_bias_level level)
 {
 	struct twl6040 *twl6040 = codec->control_data;
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
+	int ret;
 
 	switch (level) {
 	case SND_SOC_BIAS_ON:
@@ -1404,20 +1414,23 @@ static int twl6040_set_bias_level(struct snd_soc_codec *codec,
 		if (priv->codec_powered)
 			break;
 
-		twl6040_enable(twl6040);
-		priv->codec_powered = 1;
+		ret = twl6040_power(twl6040, 1);
+		if (ret)
+			return ret;
 
-		priv->sysclk_constraints = &lp_constraints;
+		priv->codec_powered = 1;
 
 		/* initialize vdd/vss registers with reg_cache */
 		twl6040_init_vdd_regs(codec);
 
+		/* Set external boost GPO */
+		twl6040_write(codec, TWL6040_REG_GPOCTL, 0x02);
 		break;
 	case SND_SOC_BIAS_OFF:
 		if (!priv->codec_powered)
 			break;
 
-		twl6040_disable(twl6040);
+		twl6040_power(twl6040, 0);
 		priv->codec_powered = 0;
 		break;
 	}
@@ -1430,12 +1443,6 @@ static int twl6040_set_bias_level(struct snd_soc_codec *codec,
 	return 0;
 }
 
-
-static struct snd_pcm_hw_constraint_list hp_constraints = {
-	.count	= ARRAY_SIZE(hp_rates),
-	.list	= hp_rates,
-};
-
 static int twl6040_startup(struct snd_pcm_substream *substream,
 			struct snd_soc_dai *dai)
 {
@@ -1445,7 +1452,7 @@ static int twl6040_startup(struct snd_pcm_substream *substream,
 
 	snd_pcm_hw_constraint_list(substream->runtime, 0,
 				SNDRV_PCM_HW_PARAM_RATE,
-				priv->sysclk_constraints);
+				&sysclk_constraints[priv->pll_power_mode]);
 
 	return 0;
 }
@@ -1458,12 +1465,7 @@ static int twl6040_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_codec *codec = rtd->codec;
 	struct twl6040 *twl6040 = codec->control_data;
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-	unsigned int sysclk;
 	int rate;
-
-	/* nothing to do for high-perf pll, it supports only 48 kHz */
-	if (priv->pll == TWL6040_HPPLL_ID)
-		return 0;
 
 	rate = params_rate(params);
 	switch (rate) {
@@ -1471,21 +1473,34 @@ static int twl6040_hw_params(struct snd_pcm_substream *substream,
 	case 22500:
 	case 44100:
 	case 88200:
-		sysclk = 17640000;
+		/* These rates are not supported when HPPLL is in use */
+		if (unlikely(priv->pll == TWL6040_SYSCLK_SEL_HPPLL)) {
+			dev_err(codec->dev, "HPPLL does not support rate %d\n",
+				rate);
+			return -EINVAL;
+		}
+		/* Capture is not supported with 17.64MHz sysclk */
+		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+			dev_err(codec->dev,
+				"capture mode is not supported at %dHz\n",
+				rate);
+			return -EINVAL;
+		}
+		priv->sysclk = 17640000;
 		break;
 	case 8000:
 	case 16000:
 	case 32000:
 	case 48000:
 	case 96000:
-		sysclk = 19200000;
+		priv->sysclk = 19200000;
 		break;
 	default:
 		dev_err(codec->dev, "unsupported rate %d\n", rate);
 		return -EINVAL;
 	}
 
-	return twl6040_set_pll(twl6040, TWL6040_LPPLL_ID, priv->clk_in, sysclk);
+	return 0;
 }
 
 static int twl6040_prepare(struct snd_pcm_substream *substream,
@@ -1493,23 +1508,13 @@ static int twl6040_prepare(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_codec *codec = rtd->codec;
+	struct twl6040 *twl6040 = codec->control_data;
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
+	int ret;
 
 	if (!priv->sysclk) {
 		dev_err(codec->dev,
 			"no mclk configured, call set_sysclk() on init\n");
-		return -EINVAL;
-	}
-
-	/*
-	 * capture is not supported at 17.64 MHz,
-	 * it's reserved for headset low-power playback scenario
-	 */
-	if ((priv->sysclk == 17640000) &&
-			substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-		dev_err(codec->dev,
-			"capture mode is not supported at %dHz\n",
-			priv->sysclk);
 		return -EINVAL;
 	}
 
@@ -1520,18 +1525,10 @@ static int twl6040_prepare(struct snd_pcm_substream *substream,
 			return -EPERM;
 	}
 
-	/*
-	 * In the capture, the Analog path should be turn on and stabilized
-	 * before McPDM prepare itself to avoid pop noises.
-	 * So the codec startup event is sending through dapm in prepare itself
-	 * to ensure that the codec analog path is up before McPDM Uplink FIFO
-	 * is going to be activated.
-	 */
-	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-		snd_soc_dapm_codec_stream_event(dai->codec,
-				dai->driver->capture.stream_name,
-				SND_SOC_DAPM_STREAM_START);
-		msleep(150);
+	ret = twl6040_set_pll(twl6040, priv->pll, priv->clk_in, priv->sysclk);
+	if (ret) {
+		dev_err(codec->dev, "Can not set PLL (%d)\n", ret);
+		return -EPERM;
 	}
 
 	return 0;
@@ -1543,26 +1540,12 @@ static int twl6040_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct twl6040 *twl6040 = codec->control_data;
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-	int ret;
-
-	priv->sysclk = twl6040_get_sysclk(twl6040);
 
 	switch (clk_id) {
 	case TWL6040_SYSCLK_SEL_LPPLL:
-		ret = twl6040_set_pll(twl6040, TWL6040_LPPLL_ID,
-				      freq, priv->sysclk);
-		if (ret)
-			return ret;
-
-		priv->sysclk_constraints = &lp_constraints;
-		break;
 	case TWL6040_SYSCLK_SEL_HPPLL:
-		ret = twl6040_set_pll(twl6040, TWL6040_HPPLL_ID, freq,
-				      priv->sysclk);
-		if (ret)
-			return ret;
-
-		priv->sysclk_constraints = &hp_constraints;
+		priv->pll = clk_id;
+		priv->clk_in = freq;
 		break;
 	default:
 		dev_err(codec->dev, "unknown clk_id %d\n", clk_id);
@@ -1599,6 +1582,24 @@ static struct snd_soc_dai_ops twl6040_dai_ops = {
 };
 
 static struct snd_soc_dai_driver twl6040_dai[] = {
+{
+	.name = "twl6040-hifi",
+	.playback = {
+		.stream_name = "Headset Playback",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = TWL6040_RATES,
+		.formats = TWL6040_FORMATS,
+	},
+	.capture = {
+		.stream_name = "Capture",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = TWL6040_RATES,
+		.formats = TWL6040_FORMATS,
+	},
+	.ops = &twl6040_dai_ops,
+},
 {
 	.name = "twl6040-ul",
 	.capture = {
@@ -1670,7 +1671,9 @@ static int twl6040_resume(struct snd_soc_codec *codec)
 static int twl6040_probe(struct snd_soc_codec *codec)
 {
 	struct twl6040_data *priv;
-	struct twl4030_codec_audio_data *pdata = dev_get_platdata(codec->dev);
+	struct twl4030_codec_data *pdata = dev_get_platdata(codec->dev);
+	struct platform_device *pdev = container_of(codec->dev,
+						   struct platform_device, dev);
 	int ret = 0;
 
 	priv = kzalloc(sizeof(struct twl6040_data), GFP_KERNEL);
@@ -1680,7 +1683,6 @@ static int twl6040_probe(struct snd_soc_codec *codec)
 
 	priv->codec = codec;
 	codec->control_data = dev_get_drvdata(codec->dev->parent);
-	codec->dapm.idle_bias_off = 1;
 
 	if (pdata && pdata->hs_left_step && pdata->hs_right_step) {
 		priv->hs_left_step = pdata->hs_left_step;
@@ -1698,16 +1700,14 @@ static int twl6040_probe(struct snd_soc_codec *codec)
 		priv->hf_right_step = 1;
 	}
 
-	if (pdata && pdata->ep_step)
-		priv->ep_step = pdata->ep_step;
-	else
-		priv->ep_step = 1;
+	priv->plug_irq = platform_get_irq(pdev, 0);
+	if (priv->plug_irq < 0) {
+		dev_err(codec->dev, "invalid irq\n");
+		ret = -EINVAL;
+		goto work_err;
+	}
 
-	/* default is low-power mode */
-	priv->headset_mode = 1;
-	priv->sysclk_constraints = &lp_constraints;
 	priv->workqueue = create_singlethread_workqueue("twl6040-codec");
-
 	if (!priv->workqueue) {
 		ret = -ENOMEM;
 		goto work_err;
@@ -1719,22 +1719,16 @@ static int twl6040_probe(struct snd_soc_codec *codec)
 
 	init_completion(&priv->headset.ramp_done);
 	init_completion(&priv->handsfree.ramp_done);
-	init_completion(&priv->earphone.ramp_done);
 
 	priv->hf_workqueue = create_singlethread_workqueue("twl6040-hf");
 	if (priv->hf_workqueue == NULL) {
 		ret = -ENOMEM;
-		goto hfwork_err;
+		goto hfwq_err;
 	}
 	priv->hs_workqueue = create_singlethread_workqueue("twl6040-hs");
 	if (priv->hs_workqueue == NULL) {
 		ret = -ENOMEM;
-		goto hswork_err;
-	}
-	priv->ep_workqueue = create_singlethread_workqueue("twl6040-ep");
-	if (priv->ep_workqueue == NULL) {
-		ret = -ENOMEM;
-		goto epwork_err;
+		goto hswq_err;
 	}
 
 	INIT_DELAYED_WORK(&priv->hs_delayed_work, twl6040_pga_hs_work);
@@ -1752,6 +1746,16 @@ static int twl6040_probe(struct snd_soc_codec *codec)
 	/* init vio registers */
 	twl6040_init_vio_regs(codec);
 
+	ret = request_threaded_irq(priv->plug_irq, NULL, twl6040_audio_handler,
+				   0, "twl6040_irq_plug", codec);
+	if (ret) {
+		dev_err(codec->dev, "PLUG IRQ request failed: %d\n", ret);
+		goto plugirq_err;
+	}
+
+	/* init vio registers */
+	twl6040_init_vio_regs(codec);
+
 	/* power on device */
 	ret = twl6040_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 	if (ret)
@@ -1764,14 +1768,12 @@ static int twl6040_probe(struct snd_soc_codec *codec)
 	return 0;
 
 bias_err:
-	twl6040_free_irq(codec->control_data, TWL6040_IRQ_PLUG, codec);
-irq_err:
-	destroy_workqueue(priv->ep_workqueue);
-epwork_err:
+	free_irq(priv->plug_irq, codec);
+plugirq_err:
 	destroy_workqueue(priv->hs_workqueue);
-hswork_err:
+hswq_err:
 	destroy_workqueue(priv->hf_workqueue);
-hfwork_err:
+hfwq_err:
 	destroy_workqueue(priv->workqueue);
 work_err:
 	kfree(priv);
@@ -1783,7 +1785,7 @@ static int twl6040_remove(struct snd_soc_codec *codec)
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
 
 	twl6040_set_bias_level(codec, SND_SOC_BIAS_OFF);
-	twl6040_free_irq(codec->control_data, TWL6040_IRQ_PLUG, codec);
+	free_irq(priv->plug_irq, codec);
 	destroy_workqueue(priv->workqueue);
 	destroy_workqueue(priv->hf_workqueue);
 	destroy_workqueue(priv->hs_workqueue);
@@ -1808,8 +1810,8 @@ static struct snd_soc_codec_driver soc_codec_dev_twl6040 = {
 
 static int __devinit twl6040_codec_probe(struct platform_device *pdev)
 {
-	return snd_soc_register_codec(&pdev->dev,
-			&soc_codec_dev_twl6040, twl6040_dai, ARRAY_SIZE(twl6040_dai));
+	return snd_soc_register_codec(&pdev->dev, &soc_codec_dev_twl6040,
+				      twl6040_dai, ARRAY_SIZE(twl6040_dai));
 }
 
 static int __devexit twl6040_codec_remove(struct platform_device *pdev)

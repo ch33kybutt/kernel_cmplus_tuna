@@ -72,10 +72,6 @@ static int omap2_gpio_dev_init(struct omap_hwmod *oh, void *unused)
 		return -ENOMEM;
 	}
 
-	pdata->regs->irqctrl = USHRT_MAX;
-	pdata->regs->edgectrl1 = USHRT_MAX;
-	pdata->regs->edgectrl2 = USHRT_MAX;
-
 	switch (oh->class->rev) {
 	case 0:
 		if (id == 1)
@@ -87,6 +83,7 @@ static int omap2_gpio_dev_init(struct omap_hwmod *oh, void *unused)
 		/* fall through */
 
 	case 1:
+		pdata->bank_type = METHOD_GPIO_24XX;
 		pdata->regs->revision = OMAP24XX_GPIO_REVISION;
 		pdata->regs->direction = OMAP24XX_GPIO_OE;
 		pdata->regs->datain = OMAP24XX_GPIO_DATAIN;
@@ -96,21 +93,13 @@ static int omap2_gpio_dev_init(struct omap_hwmod *oh, void *unused)
 		pdata->regs->irqstatus = OMAP24XX_GPIO_IRQSTATUS1;
 		pdata->regs->irqstatus2 = OMAP24XX_GPIO_IRQSTATUS2;
 		pdata->regs->irqenable = OMAP24XX_GPIO_IRQENABLE1;
-		pdata->regs->irqenable2 = OMAP24XX_GPIO_IRQENABLE2;
 		pdata->regs->set_irqenable = OMAP24XX_GPIO_SETIRQENABLE1;
 		pdata->regs->clr_irqenable = OMAP24XX_GPIO_CLEARIRQENABLE1;
 		pdata->regs->debounce = OMAP24XX_GPIO_DEBOUNCE_VAL;
 		pdata->regs->debounce_en = OMAP24XX_GPIO_DEBOUNCE_EN;
-		pdata->regs->ctrl = OMAP24XX_GPIO_CTRL;
-		pdata->regs->wkup_status = OMAP24XX_GPIO_WAKE_EN;
-		pdata->regs->wkup_clear = OMAP24XX_GPIO_CLEARWKUENA;
-		pdata->regs->wkup_set = OMAP24XX_GPIO_SETWKUENA;
-		pdata->regs->leveldetect0 = OMAP24XX_GPIO_LEVELDETECT0;
-		pdata->regs->leveldetect1 = OMAP24XX_GPIO_LEVELDETECT1;
-		pdata->regs->risingdetect = OMAP24XX_GPIO_RISINGDETECT;
-		pdata->regs->fallingdetect = OMAP24XX_GPIO_FALLINGDETECT;
 		break;
 	case 2:
+		pdata->bank_type = METHOD_GPIO_44XX;
 		pdata->regs->revision = OMAP4_GPIO_REVISION;
 		pdata->regs->direction = OMAP4_GPIO_OE;
 		pdata->regs->datain = OMAP4_GPIO_DATAIN;
@@ -120,19 +109,10 @@ static int omap2_gpio_dev_init(struct omap_hwmod *oh, void *unused)
 		pdata->regs->irqstatus = OMAP4_GPIO_IRQSTATUS0;
 		pdata->regs->irqstatus2 = OMAP4_GPIO_IRQSTATUS1;
 		pdata->regs->irqenable = OMAP4_GPIO_IRQSTATUSSET0;
-		pdata->regs->irqenable2 = OMAP4_GPIO_IRQSTATUSSET1;
 		pdata->regs->set_irqenable = OMAP4_GPIO_IRQSTATUSSET0;
 		pdata->regs->clr_irqenable = OMAP4_GPIO_IRQSTATUSCLR0;
 		pdata->regs->debounce = OMAP4_GPIO_DEBOUNCINGTIME;
 		pdata->regs->debounce_en = OMAP4_GPIO_DEBOUNCENABLE;
-		pdata->regs->ctrl = OMAP4_GPIO_CTRL;
-		pdata->regs->wkup_status = OMAP4_GPIO_IRQWAKEN0;
-		pdata->regs->wkup_clear = OMAP4_GPIO_IRQWAKEN0;
-		pdata->regs->wkup_set = OMAP4_GPIO_IRQWAKEN0;
-		pdata->regs->leveldetect0 = OMAP4_GPIO_LEVELDETECT0;
-		pdata->regs->leveldetect1 = OMAP4_GPIO_LEVELDETECT1;
-		pdata->regs->risingdetect = OMAP4_GPIO_RISINGDETECT;
-		pdata->regs->fallingdetect = OMAP4_GPIO_FALLINGDETECT;
 		break;
 	default:
 		WARN(1, "Invalid gpio bank_type\n");
@@ -155,6 +135,9 @@ static int omap2_gpio_dev_init(struct omap_hwmod *oh, void *unused)
 		return PTR_ERR(od);
 	}
 
+	omap_device_disable_idle_on_suspend(od);
+
+	gpio_bank_count++;
 	return 0;
 }
 

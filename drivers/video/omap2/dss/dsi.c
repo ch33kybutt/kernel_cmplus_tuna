@@ -270,9 +270,6 @@ struct dsi_data {
 	struct platform_device *pdev;
 	void __iomem	*base;
 
-	struct mutex	runtime_lock;
-	int		runtime_count;
-
 	int irq;
 
 	struct clk *dss_clk;
@@ -1053,64 +1050,22 @@ int dsi_runtime_get(struct platform_device *dsidev)
 	int r;
 	struct dsi_data *dsi = dsi_get_dsidrv_data(dsidev);
 
-	mutex_lock(&dsi->runtime_lock);
+	DSSDBG("dsi_runtime_get\n");
 
-	if (dsi->runtime_count++ == 0) {
-		DSSDBG("dsi_runtime_get\n");
-
-		r = dss_runtime_get();
-		if (r)
-			goto err_get_dss;
-
-		r = dispc_runtime_get();
-		if (r)
-			goto err_get_dispc;
-
-		/* XXX dsi fclk can also come from DSI PLL */
-		clk_enable(dsi->dss_clk);
-
-		r = pm_runtime_get_sync(&dsi->pdev->dev);
-		WARN_ON(r);
-		if (r < 0)
-			goto err_runtime_get;
-	}
-
-	mutex_unlock(&dsi->runtime_lock);
-
-	return 0;
-
-err_runtime_get:
-	clk_disable(dsi->dss_clk);
-	dispc_runtime_put();
-err_get_dispc:
-	dss_runtime_put();
-err_get_dss:
-	mutex_unlock(&dsi->runtime_lock);
-
-	return r;
+	r = pm_runtime_get_sync(&dsi->pdev->dev);
+	WARN_ON(r < 0);
+	return r < 0 ? r : 0;
 }
 
 void dsi_runtime_put(struct platform_device *dsidev)
 {
 	struct dsi_data *dsi = dsi_get_dsidrv_data(dsidev);
+	int r;
 
-	mutex_lock(&dsi->runtime_lock);
+	DSSDBG("dsi_runtime_put\n");
 
-	if (--dsi->runtime_count == 0) {
-		int r;
-
-		DSSDBG("dsi_runtime_put\n");
-
-		r = pm_runtime_put_sync(&dsi->pdev->dev);
-		WARN_ON(r);
-
-		clk_disable(dsi->dss_clk);
-
-		dispc_runtime_put();
-		dss_runtime_put();
-	}
-
-	mutex_unlock(&dsi->runtime_lock);
+	r = pm_runtime_put(&dsi->pdev->dev);
+	WARN_ON(r < 0);
 }
 
 /* source clock for DSI PLL. this could also be PCLKFREE */
@@ -4488,16 +4443,13 @@ int omapdss_dsi_display_enable(struct omap_dss_device *dssdev)
 	if (r)
 		goto err_get_dsi;
 
-	if(!dssdev->skip_init)
-		dsi_enable_pll_clock(dsidev, 1);
+	dsi_enable_pll_clock(dsidev, 1);
 
 	_dsi_initialize_irq(dsidev);
 
-	if(!dssdev->skip_init){
-		r = dsi_display_init_dispc(dssdev);
-		if (r)
-			goto err_init_dispc;
-	}
+	r = dsi_display_init_dispc(dssdev);
+	if (r)
+		goto err_init_dispc;
 
 	r = dsi_display_init_dsi(dssdev);
 	if (r)
@@ -4533,6 +4485,11 @@ void omapdss_dsi_display_disable(struct omap_dss_device *dssdev,
 
 	mutex_lock(&dsi->lock);
 
+	dsi_sync_vc(dsidev, 0);
+	dsi_sync_vc(dsidev, 1);
+	dsi_sync_vc(dsidev, 2);
+	dsi_sync_vc(dsidev, 3);
+
 	dsi_display_uninit_dispc(dssdev);
 
 	dsi_display_uninit_dsi(dssdev, disconnect_lanes, enter_ulps);
@@ -4557,16 +4514,11 @@ int omapdss_dsi_enable_te(struct omap_dss_device *dssdev, bool enable)
 EXPORT_SYMBOL(omapdss_dsi_enable_te);
 
 void dsi_get_overlay_fifo_thresholds(enum omap_plane plane,
-		u32 fifo_size, enum omap_burst_size *burst_size,
+		u32 fifo_size, u32 burst_size,
 		u32 *fifo_low, u32 *fifo_high)
 {
-	unsigned burst_size_bytes;
-
-	*burst_size = OMAP_DSS_BURST_16x32;
-	burst_size_bytes = 16 * 32 / 8;
-
-	*fifo_high = fifo_size - burst_size_bytes;
-	*fifo_low = fifo_size - burst_size_bytes * 2;
+	*fifo_high = fifo_size - burst_size;
+	*fifo_low = fifo_size - burst_size * 2;
 }
 
 int dsi_init_display(struct omap_dss_device *dssdev)
@@ -4700,15 +4652,18 @@ static int dsi_get_clocks(struct platform_device *dsidev)
 	struct dsi_data *dsi = dsi_get_dsidrv_data(dsidev);
 	struct clk *clk;
 
-	clk = clk_get(&dsidev->dev, "dss_clk");
+	clk = clk_get(&dsidev->dev, "fck");
 	if (IS_ERR(clk)) {
-		DSSERR("can't get dss_clk\n");
+		DSSERR("can't get fck\n");
 		return PTR_ERR(clk);
 	}
 
 	dsi->dss_clk = clk;
 
-	clk = clk_get(&dsidev->dev, "sys_clk");
+	if (cpu_is_omap34xx() || cpu_is_omap3630())
+		clk = clk_get(&dsidev->dev, "dss2_alwon_fck");
+	else
+		clk = clk_get(&dsidev->dev, "sys_clk");
 	if (IS_ERR(clk)) {
 		DSSERR("can't get sys_clk\n");
 		clk_put(dsi->dss_clk);
@@ -4770,8 +4725,6 @@ static int omap_dsi1hw_probe(struct platform_device *dsidev)
 	r = dsi_get_clocks(dsidev);
 	if (r)
 		goto err_get_clk;
-
-	mutex_init(&dsi->runtime_lock);
 
 	pm_runtime_enable(&dsidev->dev);
 
@@ -4872,12 +4825,53 @@ static int omap_dsi1hw_remove(struct platform_device *dsidev)
 	return 0;
 }
 
+static int dsi_runtime_suspend(struct device *dev)
+{
+	struct dsi_data *dsi = dsi_get_dsidrv_data(to_platform_device(dev));
+
+	clk_disable(dsi->dss_clk);
+
+	dispc_runtime_put();
+	dss_runtime_put();
+
+	return 0;
+}
+
+static int dsi_runtime_resume(struct device *dev)
+{
+	struct dsi_data *dsi = dsi_get_dsidrv_data(to_platform_device(dev));
+	int r;
+
+	r = dss_runtime_get();
+	if (r)
+		goto err_get_dss;
+
+	r = dispc_runtime_get();
+	if (r)
+		goto err_get_dispc;
+
+	clk_enable(dsi->dss_clk);
+
+	return 0;
+
+err_get_dispc:
+	dss_runtime_put();
+err_get_dss:
+	return r;
+}
+
+static const struct dev_pm_ops dsi_pm_ops = {
+	.runtime_suspend = dsi_runtime_suspend,
+	.runtime_resume = dsi_runtime_resume,
+};
+
 static struct platform_driver omap_dsi1hw_driver = {
 	.probe          = omap_dsi1hw_probe,
 	.remove         = omap_dsi1hw_remove,
 	.driver         = {
 		.name   = "omapdss_dsi1",
 		.owner  = THIS_MODULE,
+		.pm	= &dsi_pm_ops,
 	},
 };
 

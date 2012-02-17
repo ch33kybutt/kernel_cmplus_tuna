@@ -235,7 +235,7 @@ struct omap_device_pm_latency omap_keyboard_latency[] = {
 };
 
 int __init omap4_keyboard_init(struct omap4_keypad_platform_data
-						*sdp4430_keypad_data)
+			*sdp4430_keypad_data, struct omap_board_data *bdata)
 {
 	struct omap_device *od;
 	struct omap_hwmod *oh;
@@ -262,6 +262,7 @@ int __init omap4_keyboard_init(struct omap4_keypad_platform_data
 						name, oh->name);
 		return PTR_ERR(od);
 	}
+	oh->mux = omap_hwmod_mux_init(bdata->pads, bdata->pads_cnt);
 
 	return 0;
 }

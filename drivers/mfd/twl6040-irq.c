@@ -1,14 +1,23 @@
 /*
- * twl6040-irq.c  --  Interrupt controller support for TWL6040
+ * Interrupt controller support for TWL6040
  *
- * Copyright 2010 Texas Instruments Inc.
+ * Author:     Misael Lopez Cruz <misael.lopez@ti.com>
  *
- * Author: Misael Lopez Cruz <misael.lopez@ti.com>
+ * Copyright:   (C) 2011 Texas Instruments, Inc.
  *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  *
  */
 
@@ -17,7 +26,7 @@
 #include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/mfd/core.h>
-#include <linux/mfd/twl6040-codec.h>
+#include <linux/mfd/twl6040.h>
 
 struct twl6040_irq_data {
 	int mask;
@@ -51,8 +60,9 @@ static struct twl6040_irq_data twl6040_irqs[] = {
 	},
 };
 
-static inline struct twl6040_irq_data *irq_to_twl6040_irq(struct twl6040 *twl6040,
-							  int irq)
+static inline
+struct twl6040_irq_data *irq_to_twl6040_irq(struct twl6040 *twl6040,
+					    int irq)
 {
 	return &twl6040_irqs[irq - twl6040->irq_base];
 }
@@ -78,28 +88,30 @@ static void twl6040_irq_sync_unlock(struct irq_data *data)
 	mutex_unlock(&twl6040->irq_mutex);
 }
 
-static void twl6040_irq_unmask(struct irq_data *data)
+static void twl6040_irq_enable(struct irq_data *data)
 {
 	struct twl6040 *twl6040 = irq_data_get_irq_chip_data(data);
-	struct twl6040_irq_data *irq_data = irq_to_twl6040_irq(twl6040, data->irq);
+	struct twl6040_irq_data *irq_data = irq_to_twl6040_irq(twl6040,
+							       data->irq);
 
 	twl6040->irq_masks_cur &= ~irq_data->mask;
 }
 
-static void twl6040_irq_mask(struct irq_data *data)
+static void twl6040_irq_disable(struct irq_data *data)
 {
 	struct twl6040 *twl6040 = irq_data_get_irq_chip_data(data);
-	struct twl6040_irq_data *irq_data = irq_to_twl6040_irq(twl6040, data->irq);
+	struct twl6040_irq_data *irq_data = irq_to_twl6040_irq(twl6040,
+							       data->irq);
 
 	twl6040->irq_masks_cur |= irq_data->mask;
 }
 
 static struct irq_chip twl6040_irq_chip = {
-	.name = "twl6040",
-	.irq_bus_lock = twl6040_irq_lock,
-	.irq_bus_sync_unlock = twl6040_irq_sync_unlock,
-	.irq_mask = twl6040_irq_mask,
-	.irq_unmask = twl6040_irq_unmask,
+	.name			= "twl6040",
+	.irq_bus_lock		= twl6040_irq_lock,
+	.irq_bus_sync_unlock	= twl6040_irq_sync_unlock,
+	.irq_enable		= twl6040_irq_enable,
+	.irq_disable		= twl6040_irq_disable,
 };
 
 static irqreturn_t twl6040_irq_thread(int irq, void *data)
@@ -136,19 +148,6 @@ int twl6040_irq_init(struct twl6040 *twl6040)
 	twl6040->irq_masks_cache = TWL6040_ALLINT_MSK;
 	twl6040_reg_write(twl6040, TWL6040_REG_INTMR, TWL6040_ALLINT_MSK);
 
-	if (!twl6040->irq) {
-		dev_warn(twl6040->dev,
-			 "no interrupt specified, no interrupts\n");
-		twl6040->irq_base = 0;
-		return 0;
-	}
-
-	if (!twl6040->irq_base) {
-		dev_err(twl6040->dev,
-			"no interrupt base specified, no interrupts\n");
-		return 0;
-	}
-
 	/* Register them with genirq */
 	for (cur_irq = twl6040->irq_base;
 	     cur_irq < twl6040->irq_base + ARRAY_SIZE(twl6040_irqs);
@@ -163,13 +162,12 @@ int twl6040_irq_init(struct twl6040 *twl6040)
 #ifdef CONFIG_ARM
 		set_irq_flags(cur_irq, IRQF_VALID);
 #else
-		set_irq_noprobe(cur_irq);
+		irq_set_noprobe(cur_irq);
 #endif
 	}
 
 	ret = request_threaded_irq(twl6040->irq, NULL, twl6040_irq_thread,
-				   IRQF_ONESHOT,
-				   "twl6040", twl6040);
+				   IRQF_ONESHOT, "twl6040", twl6040);
 	if (ret) {
 		dev_err(twl6040->dev, "failed to request IRQ %d: %d\n",
 			twl6040->irq, ret);
@@ -180,9 +178,7 @@ int twl6040_irq_init(struct twl6040 *twl6040)
 	val = twl6040_reg_read(twl6040, TWL6040_REG_INTID);
 
 	/* interrupts cleared on write */
-	val = twl6040_reg_read(twl6040, TWL6040_REG_ACCCTL)
-		& ~TWL6040_INTCLRMODE;
-	twl6040_reg_write(twl6040, TWL6040_REG_ACCCTL, val);
+	twl6040_clear_bits(twl6040, TWL6040_REG_ACCCTL, TWL6040_INTCLRMODE);
 
 	return 0;
 }
@@ -190,7 +186,6 @@ EXPORT_SYMBOL(twl6040_irq_init);
 
 void twl6040_irq_exit(struct twl6040 *twl6040)
 {
-	if (twl6040->irq)
-		free_irq(twl6040->irq, twl6040);
+	free_irq(twl6040->irq, twl6040);
 }
 EXPORT_SYMBOL(twl6040_irq_exit);

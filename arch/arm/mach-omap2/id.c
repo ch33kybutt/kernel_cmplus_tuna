@@ -31,8 +31,7 @@
 static struct omap_chip_id omap_chip;
 static unsigned int omap_revision;
 
-u32 omap3_features;
-u32 omap4_features;
+u32 omap_features;
 
 unsigned int omap_rev(void)
 {
@@ -196,14 +195,14 @@ static void __init omap24xx_check_revision(void)
 #define OMAP3_CHECK_FEATURE(status,feat)				\
 	if (((status & OMAP3_ ##feat## _MASK) 				\
 		>> OMAP3_ ##feat## _SHIFT) != FEAT_ ##feat## _NONE) { 	\
-		omap3_features |= OMAP3_HAS_ ##feat;			\
+		omap_features |= OMAP3_HAS_ ##feat;			\
 	}
 
 static void __init omap3_check_features(void)
 {
 	u32 status;
 
-	omap3_features = 0;
+	omap_features = 0;
 
 	status = omap_ctrl_readl(OMAP3_CONTROL_OMAP_STATUS);
 
@@ -213,11 +212,11 @@ static void __init omap3_check_features(void)
 	OMAP3_CHECK_FEATURE(status, NEON);
 	OMAP3_CHECK_FEATURE(status, ISP);
 	if (cpu_is_omap3630())
-		omap3_features |= OMAP3_HAS_192MHZ_CLK;
+		omap_features |= OMAP3_HAS_192MHZ_CLK;
 	if (!cpu_is_omap3505() && !cpu_is_omap3517())
-		omap3_features |= OMAP3_HAS_IO_WAKEUP;
+		omap_features |= OMAP3_HAS_IO_WAKEUP;
 
-	omap3_features |= OMAP3_HAS_SDRC;
+	omap_features |= OMAP3_HAS_SDRC;
 
 	/*
 	 * TODO: Get additional info (where applicable)
@@ -229,10 +228,8 @@ static void __init omap4_check_features(void)
 {
 	u32 si_type;
 
-	omap4_features = 0;
-
 	if (cpu_is_omap443x())
-		omap4_features |= OMAP4_HAS_MPU_1GHZ;
+		omap_features |= OMAP4_HAS_MPU_1GHZ;
 
 
 	if (cpu_is_omap446x()) {
@@ -241,15 +238,12 @@ static void __init omap4_check_features(void)
 		switch ((si_type & (3 << 16)) >> 16) {
 		case 2:
 			/* High performance device */
-			omap4_features |= OMAP4_HAS_MPU_1_5GHZ;
-			omap4_features |= OMAP4_HAS_MPU_1_2GHZ;
+			omap_features |= OMAP4_HAS_MPU_1_5GHZ;
 			break;
 		case 1:
 		default:
 			/* Standard device */
-			omap4_features |= OMAP4_HAS_MPU_1_2GHZ;
-                        /* Overclock device */
-                        omap4_features |= OMAP4_HAS_MPU_1_35GHZ;
+			omap_features |= OMAP4_HAS_MPU_1_2GHZ;
 			break;
 		}
 	}
@@ -257,7 +251,7 @@ static void __init omap4_check_features(void)
 
 static void __init ti816x_check_features(void)
 {
-	omap3_features = OMAP3_HAS_NEON;
+	omap_features = OMAP3_HAS_NEON;
 }
 
 static void __init omap3_check_revision(void)
@@ -428,13 +422,9 @@ static void __init omap4_check_revision(void)
 	case 0xb94e:
 		switch (rev) {
 		case 0:
+		default:
 			omap_revision = OMAP4460_REV_ES1_0;
 			omap_chip.oc |= CHIP_IS_OMAP4460ES1_0;
-			break;
-		case 2:
-		default:
-			omap_revision = OMAP4460_REV_ES1_1;
-			omap_chip.oc |= CHIP_IS_OMAP4460ES1_1;
 			break;
 		}
 		break;

@@ -324,7 +324,7 @@ static inline unsigned long uv_gpa_to_soc_phys_ram(unsigned long gpa)
 
 	gpa = ((gpa << uv_hub_info->m_shift) >> uv_hub_info->m_shift) |
 		((gpa >> uv_hub_info->n_lshift) << uv_hub_info->m_val);
-	paddr = gpa & uv_hub_info->gpa_mask;
+	gpa = gpa & uv_hub_info->gpa_mask;
 	if (paddr >= remap_base && paddr < remap_base + remap_top)
 		paddr -= remap_base;
 	return paddr;

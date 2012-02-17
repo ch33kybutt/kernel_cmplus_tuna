@@ -417,7 +417,6 @@ IS_OMAP_TYPE(3517, 0x3517)
 
 #define OMAP446X_CLASS		0x44600044
 #define OMAP4460_REV_ES1_0	(OMAP446X_CLASS | (0x10 << 8))
-#define OMAP4460_REV_ES1_1	(OMAP446X_CLASS | (0x11 << 8))
 
 /*
  * omap_chip bits
@@ -449,14 +448,14 @@ IS_OMAP_TYPE(3517, 0x3517)
 #define CHIP_IS_OMAP4430ES2_2		(1 << 13)
 #define CHIP_IS_TI816X			(1 << 14)
 #define CHIP_IS_OMAP4460ES1_0		(1 << 15)
-#define CHIP_IS_OMAP4460ES1_1		(1 << 16)
 
 #define CHIP_IS_OMAP24XX		(CHIP_IS_OMAP2420 | CHIP_IS_OMAP2430)
 
 #define CHIP_IS_OMAP443X		(CHIP_IS_OMAP4430ES1 |		\
 					 CHIP_IS_OMAP4430ES2 |		\
 					 CHIP_IS_OMAP4430ES2_1 |	\
-					 CHIP_IS_OMAP4430ES2_2)
+					 CHIP_IS_OMAP4430ES2_2 |	\
+					 CHIP_IS_OMAP4460ES1_0)
 
 #define CHIP_IS_OMAP446X		(CHIP_IS_OMAP4460ES1_0 |	\
 					 CHIP_IS_OMAP4460ES1_1)
@@ -484,7 +483,7 @@ void omap2_check_revision(void);
 /*
  * Runtime detection of OMAP3 features
  */
-extern u32 omap3_features;
+extern u32 omap_features;
 
 #define OMAP3_HAS_L2CACHE		BIT(0)
 #define OMAP3_HAS_IVA			BIT(1)
@@ -494,11 +493,15 @@ extern u32 omap3_features;
 #define OMAP3_HAS_192MHZ_CLK		BIT(5)
 #define OMAP3_HAS_IO_WAKEUP		BIT(6)
 #define OMAP3_HAS_SDRC			BIT(7)
+#define OMAP4_HAS_MPU_1GHZ		BIT(8)
+#define OMAP4_HAS_MPU_1_2GHZ		BIT(9)
+#define OMAP4_HAS_MPU_1_5GHZ		BIT(10)
+
 
 #define OMAP3_HAS_FEATURE(feat,flag)			\
 static inline unsigned int omap3_has_ ##feat(void)	\
 {							\
-	return (omap3_features & OMAP3_HAS_ ##flag);	\
+	return omap_features & OMAP3_HAS_ ##flag;	\
 }							\
 
 OMAP3_HAS_FEATURE(l2cache, L2CACHE)
@@ -513,17 +516,12 @@ OMAP3_HAS_FEATURE(sdrc, SDRC)
 /*
  * Runtime detection of OMAP4 features
  */
-extern u32 omap4_features;
-
-#define OMAP4_HAS_MPU_1GHZ		BIT(0)
-#define OMAP4_HAS_MPU_1_2GHZ		BIT(1)
-#define OMAP4_HAS_MPU_1_5GHZ		BIT(2)
-#define OMAP4_HAS_MPU_1_35GHZ		BIT(2)
+extern u32 omap_features;
 
 #define OMAP4_HAS_FEATURE(feat, flag)			\
 static inline unsigned int omap4_has_ ##feat(void)	\
 {							\
-	return omap4_features & OMAP4_HAS_ ##flag;	\
+	return omap_features & OMAP4_HAS_ ##flag;	\
 }							\
 
 OMAP4_HAS_FEATURE(mpu_1ghz, MPU_1GHZ)

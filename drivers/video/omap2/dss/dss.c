@@ -62,9 +62,6 @@ static struct {
 	struct platform_device *pdev;
 	void __iomem    *base;
 
-	struct mutex	runtime_lock;
-	int		runtime_count;
-
 	struct clk	*dpll4_m4_ck;
 	struct clk	*dss_clk;
 
@@ -647,9 +644,9 @@ static int dss_get_clocks(void)
 	struct clk *clk;
 	int r;
 
-	clk = clk_get(&dss.pdev->dev, "dss_clk");
+	clk = clk_get(&dss.pdev->dev, "fck");
 	if (IS_ERR(clk)) {
-		DSSERR("can't get clock dss_clk\n");
+		DSSERR("can't get clock fck\n");
 		r = PTR_ERR(clk);
 		goto err;
 	}
@@ -687,60 +684,37 @@ err:
 	return r;
 }
 
-static void dss_put_clocks(void)
+void dss_runtime_put(void)
 {
 	if (dss.dpll4_m4_ck)
 		clk_put(dss.dpll4_m4_ck);
 	clk_put(dss.dss_clk);
 }
 
+struct clk *dss_get_ick(void)
+{
+	return clk_get(&dss.pdev->dev, "ick");
+}
+
 int dss_runtime_get(void)
 {
 	int r;
 
-	mutex_lock(&dss.runtime_lock);
+	DSSDBG("dss_runtime_get\n");
 
-	if (dss.runtime_count++ == 0) {
-		DSSDBG("dss_runtime_get\n");
-
-		clk_enable(dss.dss_clk);
-
-		r = pm_runtime_get_sync(&dss.pdev->dev);
-		WARN_ON(r);
-		if (r < 0)
-			goto err;
-
-		dss_restore_context();
-	}
-
-	mutex_unlock(&dss.runtime_lock);
-
-	return 0;
-
-err:
-	clk_disable(dss.dss_clk);
-	mutex_unlock(&dss.runtime_lock);
-	return r;
+	r = pm_runtime_get_sync(&dss.pdev->dev);
+	WARN_ON(r < 0);
+	return r < 0 ? r : 0;
 }
 
 void dss_runtime_put(void)
 {
-	mutex_lock(&dss.runtime_lock);
+	int r;
 
-	if (--dss.runtime_count == 0) {
-		int r;
+	DSSDBG("dss_runtime_put\n");
 
-		DSSDBG("dss_runtime_put\n");
-
-		dss_save_context();
-
-		r = pm_runtime_put_sync(&dss.pdev->dev);
-		WARN_ON(r);
-
-		clk_disable(dss.dss_clk);
-	}
-
-	mutex_unlock(&dss.runtime_lock);
+	r = pm_runtime_put(&dss.pdev->dev);
+	WARN_ON(r < 0);
 }
 
 /* DEBUGFS */
@@ -780,8 +754,6 @@ static int omap_dsshw_probe(struct platform_device *pdev)
 	r = dss_get_clocks();
 	if (r)
 		goto err_clocks;
-
-	mutex_init(&dss.runtime_lock);
 
 	pm_runtime_enable(&pdev->dev);
 
@@ -849,12 +821,32 @@ static int omap_dsshw_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int dss_runtime_suspend(struct device *dev)
+{
+	dss_save_context();
+	clk_disable(dss.dss_clk);
+	return 0;
+}
+
+static int dss_runtime_resume(struct device *dev)
+{
+	clk_enable(dss.dss_clk);
+	dss_restore_context();
+	return 0;
+}
+
+static const struct dev_pm_ops dss_pm_ops = {
+	.runtime_suspend = dss_runtime_suspend,
+	.runtime_resume = dss_runtime_resume,
+};
+
 static struct platform_driver omap_dsshw_driver = {
 	.probe          = omap_dsshw_probe,
 	.remove         = omap_dsshw_remove,
 	.driver         = {
 		.name   = "omapdss_dss",
 		.owner  = THIS_MODULE,
+		.pm	= &dss_pm_ops,
 	},
 };
 

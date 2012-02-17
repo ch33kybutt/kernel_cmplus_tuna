@@ -21,7 +21,6 @@
 #include <linux/list.h>
 #include <linux/kobject.h>
 #include <linux/device.h>
-#include <linux/fb.h>
 
 #define DISPC_IRQ_FRAMEDONE		(1 << 0)
 #define DISPC_IRQ_VSYNC			(1 << 1)
@@ -142,12 +141,6 @@ enum omap_dss_venc_type {
 enum omap_display_caps {
 	OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE	= 1 << 0,
 	OMAP_DSS_DISPLAY_CAP_TEAR_ELIM		= 1 << 1,
-};
-
-enum omap_dss_update_mode {
-	OMAP_DSS_UPDATE_DISABLED = 0,
-	OMAP_DSS_UPDATE_AUTO,
-	OMAP_DSS_UPDATE_MANUAL,
 };
 
 enum omap_dss_display_state {
@@ -321,40 +314,11 @@ extern const struct omap_video_timings omap_dss_pal_timings;
 extern const struct omap_video_timings omap_dss_ntsc_timings;
 #endif
 
-enum omapdss_completion_status {
-	DSS_COMPLETION_PROGRAMMED	= (1 << 1),
-	DSS_COMPLETION_DISPLAYED	= (1 << 2),
-
-	DSS_COMPLETION_CHANGED_SET	= (1 << 3),
-	DSS_COMPLETION_CHANGED_CACHE	= (1 << 4),
-	DSS_COMPLETION_CHANGED		= (3 << 3),
-
-	DSS_COMPLETION_RELEASED		= (15 << 5),
-	DSS_COMPLETION_ECLIPSED_SET	= (1 << 5),
-	DSS_COMPLETION_ECLIPSED_CACHE	= (1 << 6),
-	DSS_COMPLETION_ECLIPSED_SHADOW	= (1 << 7),
-	DSS_COMPLETION_TORN		= (1 << 8),
-};
-
-struct omapdss_ovl_cb {
-	/* optional callback method */
-	u32 (*fn)(void *data, int id, int status);
-	void *data;
-	u32 mask;
-};
-
 struct omap_dss_cpr_coefs {
 	s16 rr, rg, rb;
 	s16 gr, gg, gb;
 	s16 br, bg, bb;
 };
-
-struct omap_dss_cconv_coefs {
-	s16 ry, rcr, rcb;
-	s16 gy, gcr, gcb;
-	s16 by, bcr, bcb;
-	u16 full_range;
-} __attribute__ ((aligned(4)));
 
 struct omap_overlay_info {
 	bool enabled;
@@ -420,8 +384,6 @@ struct omap_overlay_manager_info {
 	bool trans_enabled;
 
 	bool alpha_enabled;
-
-	struct omapdss_ovl_cb cb;
 
 	bool cpr_enable;
 	struct omap_dss_cpr_coefs cpr_coefs;
@@ -608,11 +570,6 @@ struct omap_dss_driver {
 	int (*suspend)(struct omap_dss_device *display);
 	int (*resume)(struct omap_dss_device *display);
 	int (*run_test)(struct omap_dss_device *display, int test);
-
-	int (*set_update_mode)(struct omap_dss_device *dssdev,
-			enum omap_dss_update_mode);
-	enum omap_dss_update_mode (*get_update_mode)(
-			struct omap_dss_device *dssdev);
 
 	int (*update)(struct omap_dss_device *dssdev,
 			       u16 x, u16 y, u16 w, u16 h);

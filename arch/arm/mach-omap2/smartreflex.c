@@ -211,32 +211,14 @@ static irqreturn_t sr_interrupt(int irq, void *data)
 		value = notifier_to_irqen_v2(sr_class->notify_flags);
 		/* Read the status bits */
 		status = sr_read_reg(sr_info, IRQSTATUS);
-		status &= value;
 
 		/* Clear them by writing back */
 		sr_write_reg(sr_info, IRQSTATUS, status);
 		value = irqstat_to_notifier_v2(status);
 	}
 
-	/* Attempt some resemblance of recovery! */
-	if (!value) {
-		dev_err(&sr_info->pdev->dev, "%s: Spurious interrupt!"
-			"status = 0x%08x. Disabling to prevent spamming!!\n",
-			__func__, status);
-		disable_irq_nosync(sr_info->irq);
-		sr_info->irq_enabled = false;
-	} else {
-		/* If the caller reports inability to handle, disable as well */
-		if (sr_class->notify && sr_class->notify(sr_info->voltdm,
-						sr_info->voltdm_cdata, value)) {
-			dev_err(&sr_info->pdev->dev, "%s: Callback cant handle!"
-				"status=0x%08x. Disabling to prevent spam!!\n",
-				__func__, status);
-			disable_irq_nosync(sr_info->irq);
-			sr_info->irq_enabled = false;
-		}
-
-	}
+	if (sr_class->notify)
+		sr_class->notify(sr_info->voltdm, status);
 
 	return IRQ_HANDLED;
 }
@@ -813,70 +795,6 @@ void sr_disable(struct voltagedomain *voltdm)
 	}
 
 	pm_runtime_put_sync_suspend(&sr->pdev->dev);
-}
-
-/**
- * sr_notifier_control() - control the notifier mechanism
- * @voltdm:	VDD pointer to which the SR module to be configured belongs to.
- * @enable:	true to enable notifiers and false to disable the same
- *
- * SR modules allow an MCU interrupt mechanism that vary based on the IP
- * revision, we allow the system to generate interrupt if the class driver
- * has capability to handle the same. it is upto the class driver to ensure
- * the proper sequencing and handling for a clean implementation. returns
- * 0 if all goes fine, else returns failure results
- */
-int sr_notifier_control(struct voltagedomain *voltdm, bool enable)
-{
-	struct omap_sr *sr = _sr_lookup(voltdm);
-	u32 value = 0;
-
-	if (!sr) {
-		pr_warning("%s: sr corresponding to domain not found\n",
-				__func__);
-		return -EINVAL;
-	}
-	if (!sr->autocomp_active)
-		return -EINVAL;
-
-	/* If I could never register an ISR, why bother?? */
-	if (!(sr_class && sr_class->notify && sr_class->notify_flags &&
-			sr->irq)) {
-		dev_warn(&sr->pdev->dev,
-			"%s: unable to setup IRQ without handling mechanism\n",
-			__func__);
-		return -EINVAL;
-	}
-
-	switch (sr->ip_type) {
-	case SR_TYPE_V1:
-		value = notifier_to_irqen_v1(sr_class->notify_flags);
-		sr_modify_reg(sr, ERRCONFIG_V1, value,
-				(enable) ? value : 0);
-		break;
-	case SR_TYPE_V2:
-		value = notifier_to_irqen_v2(sr_class->notify_flags);
-		sr_write_reg(sr, (enable) ? IRQENABLE_SET : IRQENABLE_CLR,
-				value);
-		break;
-	default:
-		 dev_warn(&sr->pdev->dev, "%s: unknown type of sr??\n",
-				 __func__);
-		return -EINVAL;
-	}
-
-	if (!enable)
-		sr_write_reg(sr, IRQSTATUS, value);
-
-	if (enable != sr->irq_enabled) {
-		if (enable)
-			enable_irq(sr->irq);
-		else
-			disable_irq(sr->irq);
-		sr->irq_enabled = enable;
-	}
-
-	return 0;
 }
 
 /**

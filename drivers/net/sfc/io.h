@@ -243,6 +243,7 @@ static inline void _efx_writeo_page(struct efx_nic *efx, efx_oword_t *value,
 #endif
 	_efx_writed(efx, value->u32[2], reg + 8);
 	_efx_writed(efx, value->u32[3], reg + 12);
+#endif
 }
 #define efx_writeo_page(efx, value, reg, page)				\
 	_efx_writeo_page(efx, value,					\

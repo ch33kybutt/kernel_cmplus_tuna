@@ -295,9 +295,6 @@ static struct {
 	u32 wss_data;
 	struct regulator *vdda_dac_reg;
 
-	struct mutex	runtime_lock;
-	int		runtime_count;
-
 	struct clk	*tv_clk;
 	struct clk	*tv_dac_clk;
 } venc;
@@ -392,67 +389,21 @@ static int venc_runtime_get(void)
 {
 	int r;
 
-	mutex_lock(&venc.runtime_lock);
+	DSSDBG("venc_runtime_get\n");
 
-	if (venc.runtime_count++ == 0) {
-		DSSDBG("venc_runtime_get\n");
-
-		r = dss_runtime_get();
-		if (r)
-			goto err_get_dss;
-
-		r = dispc_runtime_get();
-		if (r)
-			goto err_get_dispc;
-
-		clk_enable(venc.tv_clk);
-		if (venc.tv_dac_clk)
-			clk_enable(venc.tv_dac_clk);
-
-		r = pm_runtime_get_sync(&venc.pdev->dev);
-		WARN_ON(r);
-		if (r < 0)
-			goto err_runtime_get;
-	}
-
-	mutex_unlock(&venc.runtime_lock);
-
-	return 0;
-
-err_runtime_get:
-	clk_disable(venc.tv_clk);
-	if (venc.tv_dac_clk)
-		clk_disable(venc.tv_dac_clk);
-	dispc_runtime_put();
-err_get_dispc:
-	dss_runtime_put();
-err_get_dss:
-	mutex_unlock(&venc.runtime_lock);
-
-	return r;
+	r = pm_runtime_get_sync(&venc.pdev->dev);
+	WARN_ON(r < 0);
+	return r < 0 ? r : 0;
 }
 
 static void venc_runtime_put(void)
 {
-	mutex_lock(&venc.runtime_lock);
+	int r;
 
-	if (--venc.runtime_count == 0) {
-		int r;
+	DSSDBG("venc_runtime_put\n");
 
-		DSSDBG("venc_runtime_put\n");
-
-		r = pm_runtime_put_sync(&venc.pdev->dev);
-		WARN_ON(r);
-
-		clk_disable(venc.tv_clk);
-		if (venc.tv_dac_clk)
-			clk_disable(venc.tv_dac_clk);
-
-		dispc_runtime_put();
-		dss_runtime_put();
-	}
-
-	mutex_unlock(&venc.runtime_lock);
+	r = pm_runtime_put(&venc.pdev->dev);
+	WARN_ON(r < 0);
 }
 
 static const struct venc_config *venc_timings_to_config(
@@ -605,20 +556,6 @@ static int venc_panel_resume(struct omap_dss_device *dssdev)
 	return venc_panel_enable(dssdev);
 }
 
-static enum omap_dss_update_mode venc_get_update_mode(
-		struct omap_dss_device *dssdev)
-{
-	return OMAP_DSS_UPDATE_AUTO;
-}
-
-static int venc_set_update_mode(struct omap_dss_device *dssdev,
-		enum omap_dss_update_mode mode)
-{
-	if (mode != OMAP_DSS_UPDATE_AUTO)
-		return -EINVAL;
-	return 0;
-}
-
 static void venc_get_timings(struct omap_dss_device *dssdev,
 			struct omap_video_timings *timings)
 {
@@ -702,9 +639,6 @@ static struct omap_dss_driver venc_driver = {
 
 	.get_resolution	= omapdss_default_get_resolution,
 	.get_recommended_bpp = omapdss_default_get_recommended_bpp,
-
-	.set_update_mode = venc_set_update_mode,
-	.get_update_mode = venc_get_update_mode,
 
 	.get_timings	= venc_get_timings,
 	.set_timings	= venc_set_timings,
@@ -798,16 +732,19 @@ static int venc_get_clocks(struct platform_device *pdev)
 {
 	struct clk *clk;
 
-	clk = clk_get(&pdev->dev, "tv_clk");
+	clk = clk_get(&pdev->dev, "fck");
 	if (IS_ERR(clk)) {
-		DSSERR("can't get tv_clk\n");
+		DSSERR("can't get fck\n");
 		return PTR_ERR(clk);
 	}
 
 	venc.tv_clk = clk;
 
 	if (dss_has_feature(FEAT_VENC_REQUIRES_TV_DAC_CLK)) {
-		clk = clk_get(&pdev->dev, "tv_dac_clk");
+		if (cpu_is_omap34xx() || cpu_is_omap3630())
+			clk = clk_get(&pdev->dev, "dss_96m_fck");
+		else
+			clk = clk_get(&pdev->dev, "tv_dac_clk");
 		if (IS_ERR(clk)) {
 			DSSERR("can't get tv_dac_clk\n");
 			clk_put(venc.tv_clk);
@@ -860,7 +797,6 @@ static int omap_venchw_probe(struct platform_device *pdev)
 	if (r)
 		goto err_get_clk;
 
-	mutex_init(&venc.runtime_lock);
 	pm_runtime_enable(&pdev->dev);
 
 	r = venc_runtime_get();
@@ -898,12 +834,54 @@ static int omap_venchw_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int venc_runtime_suspend(struct device *dev)
+{
+	if (venc.tv_dac_clk)
+		clk_disable(venc.tv_dac_clk);
+	clk_disable(venc.tv_clk);
+
+	dispc_runtime_put();
+	dss_runtime_put();
+
+	return 0;
+}
+
+static int venc_runtime_resume(struct device *dev)
+{
+	int r;
+
+	r = dss_runtime_get();
+	if (r < 0)
+		goto err_get_dss;
+
+	r = dispc_runtime_get();
+	if (r < 0)
+		goto err_get_dispc;
+
+	clk_enable(venc.tv_clk);
+	if (venc.tv_dac_clk)
+		clk_enable(venc.tv_dac_clk);
+
+	return 0;
+
+err_get_dispc:
+	dss_runtime_put();
+err_get_dss:
+	return r;
+}
+
+static const struct dev_pm_ops venc_pm_ops = {
+	.runtime_suspend = venc_runtime_suspend,
+	.runtime_resume = venc_runtime_resume,
+};
+
 static struct platform_driver omap_venchw_driver = {
 	.probe          = omap_venchw_probe,
 	.remove         = omap_venchw_remove,
 	.driver         = {
 		.name   = "omapdss_venc",
 		.owner  = THIS_MODULE,
+		.pm	= &venc_pm_ops,
 	},
 };
 

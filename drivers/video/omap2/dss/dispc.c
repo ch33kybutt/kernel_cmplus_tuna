@@ -35,7 +35,6 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
-#include <linux/ratelimit.h>
 
 #include <plat/sram.h>
 #include <plat/clock.h>
@@ -76,6 +75,12 @@ struct dispc_hv_coef {
 	s8 hc4_vc22;
 };
 
+enum omap_burst_size {
+	BURST_SIZE_X2 = 0,
+	BURST_SIZE_X4 = 1,
+	BURST_SIZE_X8 = 2,
+};
+
 #define REG_GET(idx, start, end) \
 	FLD_GET(dispc_read_reg(idx), start, end)
 
@@ -93,13 +98,9 @@ static struct {
 	void __iomem    *base;
 
 	int		ctx_loss_cnt;
-	struct mutex	runtime_lock;
-	int		runtime_count;
 
 	int irq;
 	struct clk *dss_clk;
-
-	u32	fifo_size[MAX_DSS_OVERLAYS];
 
 	u32	channel_irq[3]; /* Max channels hardcoded to 3*/
 
@@ -166,7 +167,7 @@ static int dispc_get_ctx_loss_count(void)
 
 static void dispc_save_context(void)
 {
-	int i, o;
+	int i;
 
 	DSSDBG("dispc_save_context\n");
 
@@ -257,8 +258,10 @@ static void dispc_save_context(void)
 		for (i = 0; i < 8; i++)
 			SR(OVL_FIR_COEF_HV(o, i));
 
-		for (i = 0; i < 5; i++)
-			SR(OVL_CONV_COEF(o, i));
+	if (dss_has_feature(FEAT_FIR_COEF_V)) {
+		for (i = 0; i < 8; i++)
+			SR(OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, i));
+	}
 
 		if (dss_has_feature(FEAT_FIR_COEF_V)) {
 			for (i = 0; i < 8; i++)
@@ -278,11 +281,22 @@ static void dispc_save_context(void)
 			for (i = 0; i < 8; i++)
 				SR(OVL_FIR_COEF_HV2(o, i));
 
-			for (i = 0; i < 8; i++)
-				SR(OVL_FIR_COEF_V2(o, i));
-		}
-		if (dss_has_feature(FEAT_ATTR2))
-			SR(OVL_ATTRIBUTES2(o));
+	if (dss_has_feature(FEAT_PRELOAD))
+		SR(OVL_PRELOAD(OMAP_DSS_VIDEO1));
+
+	/* VID2 */
+	SR(OVL_BA0(OMAP_DSS_VIDEO2));
+	SR(OVL_BA1(OMAP_DSS_VIDEO2));
+	SR(OVL_POSITION(OMAP_DSS_VIDEO2));
+	SR(OVL_SIZE(OMAP_DSS_VIDEO2));
+	SR(OVL_ATTRIBUTES(OMAP_DSS_VIDEO2));
+	SR(OVL_FIFO_THRESHOLD(OMAP_DSS_VIDEO2));
+	SR(OVL_ROW_INC(OMAP_DSS_VIDEO2));
+	SR(OVL_PIXEL_INC(OMAP_DSS_VIDEO2));
+	SR(OVL_FIR(OMAP_DSS_VIDEO2));
+	SR(OVL_PICTURE_SIZE(OMAP_DSS_VIDEO2));
+	SR(OVL_ACCU0(OMAP_DSS_VIDEO2));
+	SR(OVL_ACCU1(OMAP_DSS_VIDEO2));
 
 		if (dss_has_feature(FEAT_PRELOAD))
 			SR(OVL_PRELOAD(o));
@@ -294,8 +308,10 @@ static void dispc_save_context(void)
 	dispc.ctx_loss_cnt = dispc_get_ctx_loss_count();
 	dispc.ctx_valid = true;
 
-	DSSDBG("context saved, ctx_loss_count %d\n", dispc.ctx_loss_cnt);
-}
+	if (dss_has_feature(FEAT_FIR_COEF_V)) {
+		for (i = 0; i < 8; i++)
+			SR(OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, i));
+	}
 
 static void dispc_restore_context(void)
 {
@@ -309,7 +325,30 @@ static void dispc_restore_context(void)
 
 	ctx = dispc_get_ctx_loss_count();
 
-	if (!omap_pm_was_context_lost(dev))
+	if (dss_has_feature(FEAT_PRELOAD))
+		SR(OVL_PRELOAD(OMAP_DSS_VIDEO2));
+
+	if (dss_has_feature(FEAT_CORE_CLK_DIV))
+		SR(DIVISOR);
+
+	dispc.ctx_loss_cnt = dispc_get_ctx_loss_count();
+	dispc.ctx_valid = true;
+
+	DSSDBG("context saved, ctx_loss_count %d\n", dispc.ctx_loss_cnt);
+}
+
+static void dispc_restore_context(void)
+{
+	int i, ctx;
+
+	DSSDBG("dispc_restore_context\n");
+
+	if (!dispc.ctx_valid)
+		return;
+
+	ctx = dispc_get_ctx_loss_count();
+
+	if (ctx >= 0 && ctx == dispc.ctx_loss_cnt)
 		return;
 
 	DSSDBG("ctx_loss_count: saved %d, current %d\n",
@@ -378,11 +417,38 @@ static void dispc_restore_context(void)
 	if (dss_has_feature(FEAT_PRELOAD))
 		RR(OVL_PRELOAD(OMAP_DSS_GFX));
 
+	/* VID1 */
+	RR(OVL_BA0(OMAP_DSS_VIDEO1));
+	RR(OVL_BA1(OMAP_DSS_VIDEO1));
+	RR(OVL_POSITION(OMAP_DSS_VIDEO1));
+	RR(OVL_SIZE(OMAP_DSS_VIDEO1));
+	RR(OVL_ATTRIBUTES(OMAP_DSS_VIDEO1));
+	RR(OVL_FIFO_THRESHOLD(OMAP_DSS_VIDEO1));
+	RR(OVL_ROW_INC(OMAP_DSS_VIDEO1));
+	RR(OVL_PIXEL_INC(OMAP_DSS_VIDEO1));
+	RR(OVL_FIR(OMAP_DSS_VIDEO1));
+	RR(OVL_PICTURE_SIZE(OMAP_DSS_VIDEO1));
+	RR(OVL_ACCU0(OMAP_DSS_VIDEO1));
+	RR(OVL_ACCU1(OMAP_DSS_VIDEO1));
 
-	/* VID1-3 */
-	for (o = OMAP_DSS_VIDEO1; o <= OMAP_DSS_VIDEO3; o++) {
-		if (o == OMAP_DSS_VIDEO3 && !dss_has_feature(FEAT_OVL_VID3))
-			continue;
+	for (i = 0; i < 8; i++)
+		RR(OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, i));
+
+	for (i = 0; i < 8; i++)
+		RR(OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, i));
+
+
+	if (dss_has_feature(FEAT_FIR_COEF_V)) {
+		for (i = 0; i < 8; i++)
+			RR(OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, i));
+	}
+
+	if (dss_has_feature(FEAT_HANDLE_UV_SEPARATE)) {
+		RR(OVL_BA0_UV(OMAP_DSS_VIDEO1));
+		RR(OVL_BA1_UV(OMAP_DSS_VIDEO1));
+		RR(OVL_FIR2(OMAP_DSS_VIDEO1));
+		RR(OVL_ACCU2_0(OMAP_DSS_VIDEO1));
+		RR(OVL_ACCU2_1(OMAP_DSS_VIDEO1));
 
 		RR(OVL_BA0(o));
 		RR(OVL_BA1(o));
@@ -401,7 +467,27 @@ static void dispc_restore_context(void)
 			RR(OVL_FIR_COEF_H(o, i));
 
 		for (i = 0; i < 8; i++)
-			RR(OVL_FIR_COEF_HV(o, i));
+			RR(OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, i));
+	}
+	if (dss_has_feature(FEAT_ATTR2))
+		RR(OVL_ATTRIBUTES2(OMAP_DSS_VIDEO1));
+
+	if (dss_has_feature(FEAT_PRELOAD))
+		RR(OVL_PRELOAD(OMAP_DSS_VIDEO1));
+
+	/* VID2 */
+	RR(OVL_BA0(OMAP_DSS_VIDEO2));
+	RR(OVL_BA1(OMAP_DSS_VIDEO2));
+	RR(OVL_POSITION(OMAP_DSS_VIDEO2));
+	RR(OVL_SIZE(OMAP_DSS_VIDEO2));
+	RR(OVL_ATTRIBUTES(OMAP_DSS_VIDEO2));
+	RR(OVL_FIFO_THRESHOLD(OMAP_DSS_VIDEO2));
+	RR(OVL_ROW_INC(OMAP_DSS_VIDEO2));
+	RR(OVL_PIXEL_INC(OMAP_DSS_VIDEO2));
+	RR(OVL_FIR(OMAP_DSS_VIDEO2));
+	RR(OVL_PICTURE_SIZE(OMAP_DSS_VIDEO2));
+	RR(OVL_ACCU0(OMAP_DSS_VIDEO2));
+	RR(OVL_ACCU1(OMAP_DSS_VIDEO2));
 
 		for (i = 0; i < 5; i++)
 			RR(OVL_CONV_COEF(o, i));
@@ -411,12 +497,10 @@ static void dispc_restore_context(void)
 				RR(OVL_FIR_COEF_V(o, i));
 		}
 
-		if (dss_has_feature(FEAT_HANDLE_UV_SEPARATE)) {
-			RR(OVL_BA0_UV(o));
-			RR(OVL_BA1_UV(o));
-			RR(OVL_FIR2(o));
-			RR(OVL_ACCU2_0(o));
-			RR(OVL_ACCU2_1(o));
+	if (dss_has_feature(FEAT_FIR_COEF_V)) {
+		for (i = 0; i < 8; i++)
+			RR(OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, i));
+	}
 
 			for (i = 0; i < 8; i++)
 				RR(OVL_FIR_COEF_H2(o, i));
@@ -433,6 +517,11 @@ static void dispc_restore_context(void)
 		if (dss_has_feature(FEAT_PRELOAD))
 			RR(OVL_PRELOAD(o));
 	}
+	if (dss_has_feature(FEAT_ATTR2))
+		RR(OVL_ATTRIBUTES2(OMAP_DSS_VIDEO2));
+
+	if (dss_has_feature(FEAT_PRELOAD))
+		RR(OVL_PRELOAD(OMAP_DSS_VIDEO2));
 
 	if (dss_has_feature(FEAT_CORE_CLK_DIV))
 		RR(DIVISOR);
@@ -456,142 +545,25 @@ static void dispc_restore_context(void)
 #undef SR
 #undef RR
 
-static u32 dispc_calculate_threshold(enum omap_plane plane, u32 paddr,
-				u32 puv_addr, u16 width, u16 height,
-				s32 row_inc, s32 pix_inc)
-{
-	int shift;
-	u32 channel_no = plane;
-	u32 val, burstsize, doublestride;
-	u32 rotation, bursttype, color_mode;
-	struct dispc_config dispc_reg_config;
-
-	if (width >= 1920)
-		return 1500;
-
-	/* Get the burst size */
-	shift = (plane == OMAP_DSS_GFX) ? 6 : 14;
-	val = dispc_read_reg(DISPC_OVL_ATTRIBUTES(plane));
-	burstsize = FLD_GET(val, shift + 1, shift);
-	doublestride = FLD_GET(val, 22, 22);
-	rotation = FLD_GET(val, 13, 12);
-	bursttype = FLD_GET(val, 29, 29);
-	color_mode = FLD_GET(val, 4, 1);
-
-	/* base address for frame (Luma frame in case of YUV420) */
-	dispc_reg_config.ba = paddr;
-	/* base address for Chroma frame in case of YUV420 */
-	dispc_reg_config.bacbcr = puv_addr;
-	/* OrgSizeX for frame */
-	dispc_reg_config.sizex = width - 1;
-	/* OrgSizeY for frame */
-	dispc_reg_config.sizey = height - 1;
-	/* burst size */
-	dispc_reg_config.burstsize = burstsize;
-	/* pixel increment */
-	dispc_reg_config.pixelinc = pix_inc;
-	/* row increment */
-	dispc_reg_config.rowinc  = row_inc;
-	/* burst type: 1D/2D */
-	dispc_reg_config.bursttype = bursttype;
-	/* chroma DoubleStride when in YUV420 format */
-	dispc_reg_config.doublestride = doublestride;
-	/* Pixcel format of the frame.*/
-	dispc_reg_config.format = color_mode;
-	/* Rotation of frame */
-	dispc_reg_config.rotation = rotation;
-
-	/* DMA buffer allications - assuming reset values */
-	dispc_reg_config.gfx_top_buffer = 0;
-	dispc_reg_config.gfx_bottom_buffer = 0;
-	dispc_reg_config.vid1_top_buffer = 1;
-	dispc_reg_config.vid1_bottom_buffer = 1;
-	dispc_reg_config.vid2_top_buffer = 2;
-	dispc_reg_config.vid2_bottom_buffer = 2;
-	dispc_reg_config.vid3_top_buffer = 3;
-	dispc_reg_config.vid3_bottom_buffer = 3;
-	dispc_reg_config.wb_top_buffer = 4;
-	dispc_reg_config.wb_bottom_buffer = 4;
-
-	/* antiFlicker is off */
-	dispc_reg_config.antiflicker = 0;
-
-	return sa_calc_wrap(&dispc_reg_config, channel_no);
-}
-
 int dispc_runtime_get(void)
 {
 	int r;
 
-	mutex_lock(&dispc.runtime_lock);
+	DSSDBG("dispc_runtime_get\n");
 
-	if (dispc.runtime_count++ == 0) {
-		DSSDBG("dispc_runtime_get\n");
-
-		/*
-		 * With the DSS FIFO optimizations, ramdom lockups and reboots
-		 * are seen. It has been identified that L3_1 CD is idling and
-		 * not responding to the traffic initiated by DSS.  The
-		 * Workaround suggested by Hardware team is to keep the L3_1
-		 * CD in NO_SLEEP mode, when DSS is active.
-		 */
-		clkdm_deny_idle(l3_1_clkdm);
-
-		r = dss_runtime_get();
-		if (r)
-			goto err_dss_get;
-
-		/* XXX dispc fclk can also come from DSI PLL */
-		clk_enable(dispc.dss_clk);
-
-		r = pm_runtime_get_sync(&dispc.pdev->dev);
-		WARN_ON(r);
-		if (r < 0)
-			goto err_runtime_get;
-
-		dispc_restore_context();
-	}
-
-	mutex_unlock(&dispc.runtime_lock);
-
-	return 0;
-
-err_runtime_get:
-	clk_disable(dispc.dss_clk);
-	dss_runtime_put();
-err_dss_get:
-	mutex_unlock(&dispc.runtime_lock);
-
-	return r;
+	r = pm_runtime_get_sync(&dispc.pdev->dev);
+	WARN_ON(r < 0);
+	return r < 0 ? r : 0;
 }
 
 void dispc_runtime_put(void)
 {
-	mutex_lock(&dispc.runtime_lock);
+	int r;
 
-	if (--dispc.runtime_count == 0) {
-		int r;
+	DSSDBG("dispc_runtime_put\n");
 
-		DSSDBG("dispc_runtime_put\n");
-
-		dispc_save_context();
-
-		r = pm_runtime_put_sync(&dispc.pdev->dev);
-		WARN_ON(r);
-
-		clk_disable(dispc.dss_clk);
-
-		dss_runtime_put();
-
-		/*
-		 * Restore the L3_1 CD to HW_AUTO, when DSS module idles.
-		 * When DSS is idle, we can allow L3_1 to idle.
-		 */
-		clkdm_allow_idle(l3_1_clkdm);
-
-	}
-
-	mutex_unlock(&dispc.runtime_lock);
+	r = pm_runtime_put(&dispc.pdev->dev);
+	WARN_ON(r < 0);
 }
 
 
@@ -1175,11 +1147,10 @@ void dispc_set_channel_out(enum omap_plane plane,
 	dispc_write_reg(DISPC_OVL_ATTRIBUTES(plane), val);
 }
 
-void dispc_set_burst_size(enum omap_plane plane,
+static void dispc_set_burst_size(enum omap_plane plane,
 		enum omap_burst_size burst_size)
 {
 	int shift;
-	u32 val;
 
 	switch (plane) {
 	case OMAP_DSS_GFX:
@@ -1195,9 +1166,24 @@ void dispc_set_burst_size(enum omap_plane plane,
 		return;
 	}
 
-	val = dispc_read_reg(DISPC_OVL_ATTRIBUTES(plane));
-	val = FLD_MOD(val, burst_size, shift+1, shift);
-	dispc_write_reg(DISPC_OVL_ATTRIBUTES(plane), val);
+	REG_FLD_MOD(DISPC_OVL_ATTRIBUTES(plane), burst_size, shift + 1, shift);
+}
+
+static void dispc_configure_burst_sizes(void)
+{
+	int i;
+	const int burst_size = BURST_SIZE_X8;
+
+	/* Configure burst size always to maximum size */
+	for (i = 0; i < omap_dss_get_num_overlays(); ++i)
+		dispc_set_burst_size(i, burst_size);
+}
+
+u32 dispc_get_burst_size(enum omap_plane plane)
+{
+	unsigned unit = dss_feat_get_burst_size_unit();
+	/* burst multiplier is always x8 (see dispc_configure_burst_sizes()) */
+	return unit * 8;
 }
 
 void dispc_enable_gamma_table(bool enable)
@@ -1212,29 +1198,6 @@ void dispc_enable_gamma_table(bool enable)
 	}
 
 	REG_FLD_MOD(DISPC_CONFIG, enable, 9, 9);
-}
-
-void dispc_set_zorder(enum omap_plane plane,
-			enum omap_overlay_zorder zorder)
-{
-	u32 val;
-
-	if (!dss_has_feature(FEAT_OVL_ZORDER))
-		return;
-	val = dispc_read_reg(DISPC_OVL_ATTRIBUTES(plane));
-	val = FLD_MOD(val, zorder, 27, 26);
-	dispc_write_reg(DISPC_OVL_ATTRIBUTES(plane), val);
-}
-
-void dispc_enable_zorder(enum omap_plane plane, bool enable)
-{
-	u32 val;
-
-	if (!dss_has_feature(FEAT_OVL_ZORDER))
-		return;
-	val = dispc_read_reg(DISPC_OVL_ATTRIBUTES(plane));
-	val = FLD_MOD(val, enable, 25, 25);
-	dispc_write_reg(DISPC_OVL_ATTRIBUTES(plane), val);
 }
 
 void dispc_enable_cpr(enum omap_channel channel, bool enable)
@@ -1315,12 +1278,15 @@ static void dispc_read_plane_fifo_sizes(void)
 	u32 size;
 	int plane;
 	u8 start, end;
+	u32 unit;
+
+	unit = dss_feat_get_buffer_size_unit();
 
 	dss_feat_get_reg_field(FEAT_REG_FIFOSIZE, &start, &end);
 
 	for (plane = 0; plane < ARRAY_SIZE(dispc.fifo_size); ++plane) {
-		size = FLD_GET(dispc_read_reg(DISPC_OVL_FIFO_SIZE_STATUS(plane)),
-			start, end);
+		size = REG_GET(DISPC_OVL_FIFO_SIZE_STATUS(plane), start, end);
+		size *= unit;
 		dispc.fifo_size[plane] = size;
 	}
 }
@@ -1330,9 +1296,18 @@ u32 dispc_get_plane_fifo_size(enum omap_plane plane)
 	return dispc.fifo_size[plane];
 }
 
-void dispc_setup_plane_fifo(enum omap_plane plane, u32 low, u32 high)
+void dispc_set_fifo_threshold(enum omap_plane plane, u32 low, u32 high)
 {
 	u8 hi_start, hi_end, lo_start, lo_end;
+	u32 unit;
+
+	unit = dss_feat_get_buffer_size_unit();
+
+	WARN_ON(low % unit != 0);
+	WARN_ON(high % unit != 0);
+
+	low /= unit;
+	high /= unit;
 
 	dss_feat_get_reg_field(FEAT_REG_FIFOHIGHTHRESHOLD, &hi_start, &hi_end);
 	dss_feat_get_reg_field(FEAT_REG_FIFOLOWTHRESHOLD, &lo_start, &lo_end);
@@ -2038,174 +2013,6 @@ static unsigned long calc_fclk(enum omap_channel channel, u16 width,
 	return dispc_pclk_rate(channel) * vf * hf;
 }
 
-int dispc_scaling_decision(u16 width, u16 height,
-				u16 out_width, u16 out_height,
-				enum omap_plane plane,
-				enum omap_color_mode color_mode,
-				enum omap_channel channel, u8 rotation,
-				enum omap_dss_rotation_type type,
-				u16 min_x_decim, u16 max_x_decim,
-				u16 min_y_decim, u16 max_y_decim,
-				u16 *x_decim, u16 *y_decim, bool *five_taps)
-{
-	int maxdownscale = cpu_is_omap24xx() ? 2 : 4;
-	int bpp = color_mode_to_bpp(color_mode);
-
-	/*
-	 * For now only whole byte formats on OMAP4 can be predecimated.
-	 * Later SDMA decimation support may be added
-	 */
-	bool can_decimate_x = cpu_is_omap44xx() && !(bpp & 7);
-	bool can_decimate_y = can_decimate_x;
-
-	bool can_scale = plane != OMAP_DSS_GFX;
-
-	u16 in_width, in_height;
-	unsigned long fclk = 0, fclk5 = 0;
-	int min_factor, max_factor;	/* decimation search limits */
-	int x, y;			/* decimation search variables */
-	unsigned long fclk_max = dispc_fclk_rate();
-	u16 y_decim_limit = type == OMAP_DSS_ROT_TILER ? 2 : 16;
-
-	/* No decimation for bitmap formats */
-	if (color_mode == OMAP_DSS_COLOR_CLUT1 ||
-	    color_mode == OMAP_DSS_COLOR_CLUT2 ||
-	    color_mode == OMAP_DSS_COLOR_CLUT4 ||
-	    color_mode == OMAP_DSS_COLOR_CLUT8) {
-		*x_decim = 1;
-		*y_decim = 1;
-		*five_taps = false;
-		return 0;
-	}
-
-	/* restrict search region based on whether we can decimate */
-	if (!can_decimate_x) {
-		if (min_x_decim > 1)
-			return -EINVAL;
-		min_x_decim = max_x_decim = 1;
-	} else {
-		if (max_x_decim > 16)
-			max_x_decim = 16;
-	}
-
-	if (!can_decimate_y) {
-		if (min_y_decim > 1)
-			return -EINVAL;
-		min_y_decim = max_y_decim = 1;
-	} else {
-		if (max_y_decim > y_decim_limit)
-			max_y_decim = y_decim_limit;
-	}
-
-	/*
-	 * Find best supported quality.  In the search algorithm, we make use
-	 * of the fact, that increased decimation in either direction will have
-	 * lower quality.  However, we do not differentiate horizontal and
-	 * vertical decimation even though they may affect quality differently
-	 * given the exact geometry involved.
-	 *
-	 * Also, since the clock calculations are abstracted, we cannot make
-	 * assumptions on how decimation affects the clock rates in our search.
-	 *
-	 * We search the whole search region in increasing layers from
-	 * min_factor to max_factor.  In each layer we search in increasing
-	 * factors alternating between x and y axis:
-	 *
-	 *   x:	1	2	3
-	 * y:
-	 * 1	1st |	3rd |	6th |
-	 *	----+	    |	    |
-	 * 2	2nd	4th |	8th |
-	 *	------------+	    |
-	 * 3	5th	7th	9th |
-	*	--------------------+
-	 */
-	min_factor = min(min_x_decim, min_y_decim);
-	max_factor = max(max_x_decim, max_y_decim);
-	x = min_x_decim;
-	y = min_y_decim;
-	while (1) {
-		if (x < min_x_decim || x > max_x_decim ||
-			y < min_y_decim || y > max_y_decim)
-			goto loop;
-
-		in_width = DIV_ROUND_UP(width, x);
-		in_height = DIV_ROUND_UP(height, y);
-
-		if (in_width == out_width && in_height == out_height)
-			break;
-
-		if (!can_scale)
-			goto loop;
-
-		if (out_width < in_width / maxdownscale ||
-			out_height < in_height / maxdownscale)
-			goto loop;
-
-		/* Use 5-tap filter unless must use 3-tap */
-		if (!cpu_is_omap44xx())
-			*five_taps = in_width <= 1024;
-		else if (omap_rev() == OMAP4430_REV_ES1_0)
-			*five_taps = in_width <= 1280;
-		else
-			*five_taps = true;
-
-		/*
-		 * Predecimation on OMAP4 still fetches the whole lines
-		 * :TODO: How does it affect the required clock speed?
-		 */
-		fclk = calc_fclk(channel, in_width, in_height,
-					out_width, out_height);
-		fclk5 = *five_taps ?
-			calc_fclk_five_taps(channel, in_width, in_height,
-					out_width, out_height, color_mode) : 0;
-
-		DSSDBG("%d*%d,%d*%d->%d,%d requires %lu(3T), %lu(5T) Hz\n",
-			in_width, x, in_height, y, out_width, out_height,
-			fclk, fclk5);
-
-		/* for now we always use 5-tap unless 3-tap is required */
-		if (*five_taps)
-			fclk = fclk5;
-
-		/* OMAP2/3 has a scaler size limitation */
-		if (!cpu_is_omap44xx() && in_width > (1024 << !*five_taps))
-			goto loop;
-
-		DSSDBG("required fclk rate = %lu Hz\n", fclk);
-		DSSDBG("current fclk rate = %lu Hz\n", fclk_max);
-
-		if (fclk > fclk_max)
-			goto loop;
-		break;
-
-loop:
-		/* err if exhausted search region */
-		if (x == max_x_decim && y == max_y_decim) {
-			DSSERR("failed to set up scaling %u*%u to %u*%u, "
-					"required fclk rate = %lu Hz, "
-					"current = %lu Hz\n",
-					width, height, out_width, out_height,
-					fclk, fclk_max);
-			return -EINVAL;
-		}
-
-		/* get to next factor */
-		if (x == y) {
-			x = min_factor;
-			y++;
-		} else {
-			swap(x, y);
-			if (x < y)
-				x++;
-		}
-	}
-
-	*x_decim = x;
-	*y_decim = y;
-	return 0;
-}
-
 int dispc_setup_plane(enum omap_plane plane,
 		u32 paddr, u16 screen_width,
 		u16 pos_x, u16 pos_y,
@@ -2239,6 +2046,14 @@ int dispc_setup_plane(enum omap_plane plane,
 	       out_width, out_height,
 	       ilace, color_mode,
 	       rotation, mirror, channel, five_taps ? 5 : 3);
+
+	DSSDBG("dispc_setup_plane %d, pa %x, sw %d, %d,%d, %dx%d -> "
+	       "%dx%d, ilace %d, cmode %x, rot %d, mir %d chan %d\n",
+	       plane, paddr, screen_width, pos_x, pos_y,
+	       width, height,
+	       out_width, out_height,
+	       ilace, color_mode,
+	       rotation, mirror, channel);
 
 	if (paddr == 0)
 		return -EINVAL;
@@ -2728,11 +2543,12 @@ void dispc_enable_alpha_blending(enum omap_channel ch, bool enable)
 	if (!dss_has_feature(FEAT_GLOBAL_ALPHA))
 		return;
 
-	/* :NOTE: compatibility mode is not supported on LCD2 */
 	if (ch == OMAP_DSS_CHANNEL_LCD)
 		REG_FLD_MOD(DISPC_CONFIG, enable, 18, 18);
 	else if (ch == OMAP_DSS_CHANNEL_DIGIT)
 		REG_FLD_MOD(DISPC_CONFIG, enable, 19, 19);
+	else /* OMAP_DSS_CHANNEL_LCD2 */
+		REG_FLD_MOD(DISPC_CONFIG2, enable, 18, 18);
 }
 bool dispc_alpha_blending_enabled(enum omap_channel ch)
 {
@@ -3217,59 +3033,177 @@ void dispc_dump_regs(struct seq_file *s)
 	if (dss_has_feature(FEAT_PRELOAD))
 		DUMPREG(DISPC_OVL_PRELOAD(OMAP_DSS_GFX));
 
-	for (o = OMAP_DSS_VIDEO1; o <= OMAP_DSS_VIDEO3; o++) {
-		if (o == OMAP_DSS_VIDEO3 && !dss_has_feature(FEAT_OVL_VID3))
-			continue;
+	DUMPREG(DISPC_OVL_BA0(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_BA1(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_POSITION(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_SIZE(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_ATTRIBUTES(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_FIFO_THRESHOLD(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_FIFO_SIZE_STATUS(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_ROW_INC(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_PIXEL_INC(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_FIR(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_PICTURE_SIZE(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_ACCU0(OMAP_DSS_VIDEO1));
+	DUMPREG(DISPC_OVL_ACCU1(OMAP_DSS_VIDEO1));
 
-		DUMPREG(DISPC_OVL_BA0(o));
-		DUMPREG(DISPC_OVL_BA1(o));
-		DUMPREG(DISPC_OVL_POSITION(o));
-		DUMPREG(DISPC_OVL_SIZE(o));
-		DUMPREG(DISPC_OVL_ATTRIBUTES(o));
-		DUMPREG(DISPC_OVL_FIFO_THRESHOLD(o));
-		DUMPREG(DISPC_OVL_FIFO_SIZE_STATUS(o));
-		DUMPREG(DISPC_OVL_ROW_INC(o));
-		DUMPREG(DISPC_OVL_PIXEL_INC(o));
-		DUMPREG(DISPC_OVL_FIR(o));
-		DUMPREG(DISPC_OVL_PICTURE_SIZE(o));
-		DUMPREG(DISPC_OVL_ACCU0(o));
-		DUMPREG(DISPC_OVL_ACCU1(o));
+	DUMPREG(DISPC_OVL_BA0(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_BA1(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_POSITION(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_SIZE(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_ATTRIBUTES(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_FIFO_THRESHOLD(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_FIFO_SIZE_STATUS(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_ROW_INC(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_PIXEL_INC(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_FIR(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_PICTURE_SIZE(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_ACCU0(OMAP_DSS_VIDEO2));
+	DUMPREG(DISPC_OVL_ACCU1(OMAP_DSS_VIDEO2));
 
-		for (i = 0; i < 8; i++)
-			DUMPREG(DISPC_OVL_FIR_COEF_H(o, i));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 0));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 1));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 2));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 3));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 4));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 5));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 6));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO1, 7));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 0));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 1));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 2));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 3));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 4));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 5));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 6));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO1, 7));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO1, 0));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO1, 1));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO1, 2));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO1, 3));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO1, 4));
+	if (dss_has_feature(FEAT_FIR_COEF_V)) {
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO1, 7));
+	}
 
-		for (i = 0; i < 8; i++)
-			DUMPREG(DISPC_OVL_FIR_COEF_HV(o, i));
+	if (dss_has_feature(FEAT_HANDLE_UV_SEPARATE)) {
+		DUMPREG(DISPC_OVL_BA0_UV(OMAP_DSS_VIDEO1));
+		DUMPREG(DISPC_OVL_BA1_UV(OMAP_DSS_VIDEO1));
+		DUMPREG(DISPC_OVL_FIR2(OMAP_DSS_VIDEO1));
+		DUMPREG(DISPC_OVL_ACCU2_0(OMAP_DSS_VIDEO1));
+		DUMPREG(DISPC_OVL_ACCU2_1(OMAP_DSS_VIDEO1));
 
-		for (i = 0; i < 5; i++)
-			DUMPREG(DISPC_OVL_CONV_COEF(o, i));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO1, 7));
 
-		if (dss_has_feature(FEAT_FIR_COEF_V)) {
-			for (i = 0; i < 8; i++)
-				DUMPREG(DISPC_OVL_FIR_COEF_V(o, i));
-		}
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO1, 7));
 
-		if (dss_has_feature(FEAT_HANDLE_UV_SEPARATE)) {
-			DUMPREG(DISPC_OVL_BA0_UV(o));
-			DUMPREG(DISPC_OVL_BA1_UV(o));
-			DUMPREG(DISPC_OVL_FIR2(o));
-			DUMPREG(DISPC_OVL_ACCU2_0(o));
-			DUMPREG(DISPC_OVL_ACCU2_1(o));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO1, 7));
+	}
+	if (dss_has_feature(FEAT_ATTR2))
+		DUMPREG(DISPC_OVL_ATTRIBUTES2(OMAP_DSS_VIDEO1));
 
-			for (i = 0; i < 8; i++)
-				DUMPREG(DISPC_OVL_FIR_COEF_H2(o, i));
 
-			for (i = 0; i < 8; i++)
-				DUMPREG(DISPC_OVL_FIR_COEF_HV2(o, i));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 0));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 1));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 2));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 3));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 4));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 5));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 6));
+	DUMPREG(DISPC_OVL_FIR_COEF_H(OMAP_DSS_VIDEO2, 7));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 0));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 1));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 2));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 3));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 4));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 5));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 6));
+	DUMPREG(DISPC_OVL_FIR_COEF_HV(OMAP_DSS_VIDEO2, 7));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO2, 0));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO2, 1));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO2, 2));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO2, 3));
+	DUMPREG(DISPC_OVL_CONV_COEF(OMAP_DSS_VIDEO2, 4));
 
-			for (i = 0; i < 8; i++)
-				DUMPREG(DISPC_OVL_FIR_COEF_V2(o, i));
-		}
-		if (dss_has_feature(FEAT_ATTR2))
-			DUMPREG(DISPC_OVL_ATTRIBUTES2(o));
+	if (dss_has_feature(FEAT_FIR_COEF_V)) {
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_V(OMAP_DSS_VIDEO2, 7));
+	}
 
-		if (dss_has_feature(FEAT_PRELOAD))
-			DUMPREG(DISPC_OVL_PRELOAD(o));
+	if (dss_has_feature(FEAT_HANDLE_UV_SEPARATE)) {
+		DUMPREG(DISPC_OVL_BA0_UV(OMAP_DSS_VIDEO2));
+		DUMPREG(DISPC_OVL_BA1_UV(OMAP_DSS_VIDEO2));
+		DUMPREG(DISPC_OVL_FIR2(OMAP_DSS_VIDEO2));
+		DUMPREG(DISPC_OVL_ACCU2_0(OMAP_DSS_VIDEO2));
+		DUMPREG(DISPC_OVL_ACCU2_1(OMAP_DSS_VIDEO2));
+
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_H2(OMAP_DSS_VIDEO2, 7));
+
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_HV2(OMAP_DSS_VIDEO2, 7));
+
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 0));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 1));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 2));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 3));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 4));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 5));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 6));
+		DUMPREG(DISPC_OVL_FIR_COEF_V2(OMAP_DSS_VIDEO2, 7));
+	}
+	if (dss_has_feature(FEAT_ATTR2))
+		DUMPREG(DISPC_OVL_ATTRIBUTES2(OMAP_DSS_VIDEO2));
+
+	if (dss_has_feature(FEAT_PRELOAD)) {
+		DUMPREG(DISPC_OVL_PRELOAD(OMAP_DSS_VIDEO1));
+		DUMPREG(DISPC_OVL_PRELOAD(OMAP_DSS_VIDEO2));
 	}
 
 	dispc_runtime_put();
@@ -3999,6 +3933,8 @@ static void _omap_dispc_initial_config(void)
 	dispc_set_loadmode(OMAP_DSS_LOAD_FRAME_ONLY);
 
 	dispc_read_plane_fifo_sizes();
+
+	dispc_configure_burst_sizes();
 }
 
 /* DISPC HW IP initialisation */
@@ -4011,9 +3947,9 @@ static int omap_dispchw_probe(struct platform_device *pdev)
 
 	dispc.pdev = pdev;
 
-	clk = clk_get(&pdev->dev, "dss_clk");
+	clk = clk_get(&pdev->dev, "fck");
 	if (IS_ERR(clk)) {
-		DSSERR("can't get dss_clk\n");
+		DSSERR("can't get fck\n");
 		r = PTR_ERR(clk);
 		goto err_get_clk;
 	}
@@ -4055,8 +3991,6 @@ static int omap_dispchw_probe(struct platform_device *pdev)
 		goto err_irq;
 	}
 
-	mutex_init(&dispc.runtime_lock);
-
 	pm_runtime_enable(&pdev->dev);
 
 	r = dispc_runtime_get();
@@ -4097,12 +4031,41 @@ static int omap_dispchw_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int dispc_runtime_suspend(struct device *dev)
+{
+	dispc_save_context();
+	clk_disable(dispc.dss_clk);
+	dss_runtime_put();
+
+	return 0;
+}
+
+static int dispc_runtime_resume(struct device *dev)
+{
+	int r;
+
+	r = dss_runtime_get();
+	if (r < 0)
+		return r;
+
+	clk_enable(dispc.dss_clk);
+	dispc_restore_context();
+
+	return 0;
+}
+
+static const struct dev_pm_ops dispc_pm_ops = {
+	.runtime_suspend = dispc_runtime_suspend,
+	.runtime_resume = dispc_runtime_resume,
+};
+
 static struct platform_driver omap_dispchw_driver = {
 	.probe          = omap_dispchw_probe,
 	.remove         = omap_dispchw_remove,
 	.driver         = {
 		.name   = "omapdss_dispc",
 		.owner  = THIS_MODULE,
+		.pm	= &dispc_pm_ops,
 	},
 };
 

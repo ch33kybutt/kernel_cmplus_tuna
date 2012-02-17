@@ -55,11 +55,15 @@ static struct iommu_platform_data omap3_devices_data[] = {
 #ifdef CONFIG_ARCH_OMAP4
 static struct iommu_platform_data omap4_devices_data[] = {
 	{
-		.name = "ducati",
-		.oh_name = "ipu",
-		.nr_tlb_entries = 32,
-		.da_start = 0x0,
-		.da_end = 0xFFFFF000,
+		.base = OMAP4_MMU1_BASE,
+		.irq = OMAP44XX_IRQ_DUCATI_MMU,
+		.pdata = {
+			.name = "ducati",
+			.nr_tlb_entries = 32,
+			.clk_name = "ipu_fck",
+			.da_start = 0x0,
+			.da_end = 0xFFFFF000,
+		},
 	},
 	{
 		.name = "tesla",

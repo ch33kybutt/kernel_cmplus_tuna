@@ -241,7 +241,6 @@ static u32 omap2_get_pte_attr(struct iotlb_entry *e)
 	attr |= e->elsz >> 3;
 	attr <<= (((e->pgsz == MMU_CAM_PGSZ_4K) ||
 			(e->pgsz == MMU_CAM_PGSZ_64K)) ? 0 : 6);
-
 	return attr;
 }
 

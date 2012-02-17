@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
@@ -858,6 +859,75 @@ static void omap_usbhs_deinit(struct device *dev)
 	struct usbhs_omap_platform_data	*pdata = &omap->platdata;
 
 	dev_dbg(dev, "stopping TI HSUSB Controller\n");
+
+	spin_lock_irqsave(&omap->lock, flags);
+
+	if (omap->count == 0)
+		goto end_disble;
+
+	omap->count--;
+
+	if (omap->count != 0)
+		goto end_disble;
+
+	/* Reset OMAP modules for insmod/rmmod to work */
+	usbhs_write(omap->uhh_base, OMAP_UHH_SYSCONFIG,
+			is_omap_usbhs_rev2(omap) ?
+			OMAP4_UHH_SYSCONFIG_SOFTRESET :
+			OMAP_UHH_SYSCONFIG_SOFTRESET);
+
+	timeout = jiffies + msecs_to_jiffies(100);
+	while (!(usbhs_read(omap->uhh_base, OMAP_UHH_SYSSTATUS)
+				& (1 << 0))) {
+		cpu_relax();
+
+		if (time_after(jiffies, timeout))
+			dev_dbg(dev, "operation timed out\n");
+	}
+
+	while (!(usbhs_read(omap->uhh_base, OMAP_UHH_SYSSTATUS)
+				& (1 << 1))) {
+		cpu_relax();
+
+		if (time_after(jiffies, timeout))
+			dev_dbg(dev, "operation timed out\n");
+	}
+
+	while (!(usbhs_read(omap->uhh_base, OMAP_UHH_SYSSTATUS)
+				& (1 << 2))) {
+		cpu_relax();
+
+		if (time_after(jiffies, timeout))
+			dev_dbg(dev, "operation timed out\n");
+	}
+
+	usbhs_write(omap->tll_base, OMAP_USBTLL_SYSCONFIG, (1 << 1));
+
+	while (!(usbhs_read(omap->tll_base, OMAP_USBTLL_SYSSTATUS)
+				& (1 << 0))) {
+		cpu_relax();
+
+		if (time_after(jiffies, timeout))
+			dev_dbg(dev, "operation timed out\n");
+	}
+
+	if (is_omap_usbhs_rev2(omap)) {
+		if (is_ehci_tll_mode(pdata->port_mode[0]))
+			clk_disable(omap->usbtll_p1_fck);
+		if (is_ehci_tll_mode(pdata->port_mode[1]))
+			clk_disable(omap->usbtll_p2_fck);
+		clk_disable(omap->utmi_p2_fck);
+		clk_disable(omap->utmi_p1_fck);
+	}
+
+	clk_disable(omap->usbtll_ick);
+	clk_disable(omap->usbtll_fck);
+	clk_disable(omap->usbhost_fs_fck);
+	clk_disable(omap->usbhost_hs_fck);
+	clk_disable(omap->usbhost_ick);
+
+	/* The gpio_free migh sleep; so unlock the spinlock */
+	spin_unlock_irqrestore(&omap->lock, flags);
 
 	if (pdata->ehci_data->phy_reset) {
 		if (gpio_is_valid(pdata->ehci_data->reset_gpio_port[0]))

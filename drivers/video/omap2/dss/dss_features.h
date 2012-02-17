@@ -55,9 +55,6 @@ enum dss_feat_id {
 	FEAT_CPR			= 1 << 23,
 	FEAT_PRELOAD			= 1 << 24,
 	FEAT_FIR_COEF_V			= 1 << 25,
-	FEAT_ALPHA_OMAP3_COMPAT		= 1 << 26,
-	FEAT_OVL_VID3			= 1 << 27,
-	FEAT_OVL_ZORDER			= 1 << 28,
 };
 
 /* DSS register field id */
@@ -96,6 +93,9 @@ enum omap_color_mode dss_feat_get_supported_color_modes(enum omap_plane plane);
 bool dss_feat_color_mode_supported(enum omap_plane plane,
 		enum omap_color_mode color_mode);
 const char *dss_feat_get_clk_source_name(enum omap_dss_clk_source id);
+
+u32 dss_feat_get_buffer_size_unit(void);	/* in bytes */
+u32 dss_feat_get_burst_size_unit(void);		/* in bytes */
 
 bool dss_has_feature(enum dss_feat_id id);
 void dss_feat_get_reg_field(enum dss_feat_reg_field id, u8 *start, u8 *end);

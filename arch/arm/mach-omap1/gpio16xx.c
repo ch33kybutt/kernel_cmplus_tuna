@@ -45,7 +45,6 @@ static struct omap_gpio_reg_offs omap16xx_mpuio_regs = {
 	.irqstatus	= OMAP_MPUIO_GPIO_INT,
 	.irqenable	= OMAP_MPUIO_GPIO_MASKIT,
 	.irqenable_inv	= true,
-	.irqctrl	= OMAP_MPUIO_GPIO_INT_EDGE,
 };
 
 static struct __initdata omap_gpio_platform_data omap16xx_mpu_gpio_config = {
@@ -53,7 +52,6 @@ static struct __initdata omap_gpio_platform_data omap16xx_mpu_gpio_config = {
 	.is_mpuio		= true,
 	.bank_width		= 16,
 	.bank_stride		= 1,
-	.suspend_support	= true,
 	.regs                   = &omap16xx_mpuio_regs,
 };
 
@@ -91,18 +89,11 @@ static struct omap_gpio_reg_offs omap16xx_gpio_regs = {
 	.irqenable	= OMAP1610_GPIO_IRQENABLE1,
 	.set_irqenable	= OMAP1610_GPIO_SET_IRQENABLE1,
 	.clr_irqenable	= OMAP1610_GPIO_CLEAR_IRQENABLE1,
-	.wkup_status	= OMAP1610_GPIO_WAKEUPENABLE,
-	.wkup_clear	= OMAP1610_GPIO_CLEAR_WAKEUPENA,
-	.wkup_set	= OMAP1610_GPIO_SET_WAKEUPENA,
-	.edgectrl1	= OMAP1610_GPIO_EDGE_CTRL1,
-	.edgectrl2	= OMAP1610_GPIO_EDGE_CTRL2,
-	.sysconfig	= OMAP1610_GPIO_SYSCONFIG,
 };
 
 static struct __initdata omap_gpio_platform_data omap16xx_gpio1_config = {
 	.virtual_irq_start	= IH_GPIO_BASE,
 	.bank_width		= 16,
-	.suspend_support	= true,
 	.regs                   = &omap16xx_gpio_regs,
 };
 
@@ -132,7 +123,6 @@ static struct __initdata resource omap16xx_gpio2_resources[] = {
 static struct __initdata omap_gpio_platform_data omap16xx_gpio2_config = {
 	.virtual_irq_start	= IH_GPIO_BASE + 16,
 	.bank_width		= 16,
-	.suspend_support	= true,
 	.regs                   = &omap16xx_gpio_regs,
 };
 
@@ -162,7 +152,6 @@ static struct __initdata resource omap16xx_gpio3_resources[] = {
 static struct __initdata omap_gpio_platform_data omap16xx_gpio3_config = {
 	.virtual_irq_start	= IH_GPIO_BASE + 32,
 	.bank_width		= 16,
-	.suspend_support	= true,
 	.regs                   = &omap16xx_gpio_regs,
 };
 
@@ -192,7 +181,6 @@ static struct __initdata resource omap16xx_gpio4_resources[] = {
 static struct __initdata omap_gpio_platform_data omap16xx_gpio4_config = {
 	.virtual_irq_start	= IH_GPIO_BASE + 48,
 	.bank_width		= 16,
-	.suspend_support	= true,
 	.regs                   = &omap16xx_gpio_regs,
 };
 

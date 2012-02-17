@@ -94,10 +94,6 @@ source "drivers/memstick/Kconfig"
 
 source "drivers/leds/Kconfig"
 
-source "drivers/nfc/Kconfig"
-
-source "drivers/switch/Kconfig"
-
 source "drivers/accessibility/Kconfig"
 
 source "drivers/infiniband/Kconfig"
@@ -116,6 +112,8 @@ source "drivers/uio/Kconfig"
 
 source "drivers/vlynq/Kconfig"
 
+source "drivers/virtio/Kconfig"
+
 source "drivers/xen/Kconfig"
 
 source "drivers/staging/Kconfig"
@@ -128,11 +126,8 @@ source "drivers/hwspinlock/Kconfig"
 
 source "drivers/clocksource/Kconfig"
 
-source "drivers/remoteproc/Kconfig"
+source "drivers/iommu/Kconfig"
 
-source "drivers/virtio/Kconfig"
+source "drivers/virt/Kconfig"
 
-source "drivers/rpmsg/Kconfig"
-
-source "drivers/omap_hsi/Kconfig"
 endmenu

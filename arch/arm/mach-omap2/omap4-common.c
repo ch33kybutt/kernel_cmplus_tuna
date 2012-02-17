@@ -23,6 +23,8 @@
 #include <asm/cacheflush.h>
 #include <asm/smp_twd.h>
 
+#include <plat/irqs.h>
+
 #include <mach/hardware.h>
 #include <mach/omap4-common.h>
 #include <mach/omap-wakeupgen.h>
@@ -65,20 +67,16 @@ void *omap_get_dram_barrier_base(void)
 
 void __init gic_init_irq(void)
 {
-
 	/* Static mapping, never released */
 	gic_dist_base_addr = ioremap(OMAP44XX_GIC_DIST_BASE, SZ_4K);
 	if (WARN_ON(!gic_dist_base_addr))
 		return;
 
 	/* Static mapping, never released */
-	gic_cpu_base = ioremap(OMAP44XX_GIC_CPU_BASE, SZ_512);
-	if (WARN_ON(!gic_cpu_base))
-		return;
+	omap_irq_base = ioremap(OMAP44XX_GIC_CPU_BASE, SZ_512);
+	BUG_ON(!omap_irq_base);
 
-	omap_wakeupgen_init();
-
-	gic_init(0, 29, gic_dist_base_addr, gic_cpu_base);
+	gic_init(0, 29, gic_dist_base_addr, omap_irq_base);
 }
 
 /*

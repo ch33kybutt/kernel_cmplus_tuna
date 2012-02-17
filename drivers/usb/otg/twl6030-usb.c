@@ -369,16 +369,18 @@ static void otg_set_vbus_work(struct work_struct *data)
 {
 	struct twl6030_usb *twl = container_of(data, struct twl6030_usb,
 								set_vbus_work);
+
 	/*
 	 * Start driving VBUS. Set OPA_MODE bit in CHARGERUSB_CTRL1
 	 * register. This enables boost mode.
 	 */
+
 	if (twl->vbus_enable)
 		twl6030_writeb(twl, TWL_MODULE_MAIN_CHARGE , 0x40,
-						CHARGERUSB_CTRL1);
+							CHARGERUSB_CTRL1);
 	else
 		twl6030_writeb(twl, TWL_MODULE_MAIN_CHARGE , 0x00,
-						CHARGERUSB_CTRL1);
+							CHARGERUSB_CTRL1);
 }
 
 static int twl6030_set_vbus(struct otg_transceiver *x, bool enabled)
@@ -387,6 +389,7 @@ static int twl6030_set_vbus(struct otg_transceiver *x, bool enabled)
 
 	twl->vbus_enable = enabled;
 	schedule_work(&twl->set_vbus_work);
+
 	return 0;
 }
 
@@ -449,7 +452,6 @@ static int __devinit twl6030_usb_probe(struct platform_device *pdev)
 
 	INIT_WORK(&twl->set_vbus_work, otg_set_vbus_work);
 
-	twl->vbus_enable = false;
 	twl->irq_enabled = true;
 	status = request_threaded_irq(twl->irq1, NULL, twl6030_usbotg_irq,
 			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,

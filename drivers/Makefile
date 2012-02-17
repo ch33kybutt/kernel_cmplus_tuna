@@ -124,8 +124,8 @@ obj-y				+= ieee802154/
 obj-y				+= clk/
 
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
-obj-$(CONFIG_REMOTE_PROC)	+= remoteproc/
+obj-$(CONFIG_NFC)		+= nfc/
+obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 
-obj-$(CONFIG_DMM_OMAP)		+= media/
-obj-$(CONFIG_TILER_OMAP)	+= media/
-obj-$(CONFIG_OMAP_HSI)		+= omap_hsi/
+# Virtualization drivers
+obj-$(CONFIG_VIRT_DRIVERS)	+= virt/

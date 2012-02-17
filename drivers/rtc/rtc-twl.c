@@ -275,7 +275,7 @@ static int twl_rtc_set_time(struct device *dev, struct rtc_time *tm)
 		goto out;
 
 	save_control &= ~BIT_RTC_CTRL_REG_STOP_RTC_M;
-	twl_rtc_write_u8(save_control, REG_RTC_CTRL_REG);
+	ret = twl_rtc_write_u8(save_control, REG_RTC_CTRL_REG);
 	if (ret < 0)
 		goto out;
 
@@ -474,7 +474,6 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "can't register RTC device, err %ld\n",
 			PTR_ERR(rtc));
 		goto out1;
-
 	}
 
 	ret = request_threaded_irq(irq, NULL, twl_rtc_interrupt,
@@ -484,9 +483,6 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "IRQ is not free.\n");
 		goto out2;
 	}
-
-	if (enable_irq_wake(irq) < 0)
-		dev_warn(&pdev->dev, "Cannot enable wakeup for IRQ %d\n", irq);
 
 	platform_set_drvdata(pdev, rtc);
 	return 0;

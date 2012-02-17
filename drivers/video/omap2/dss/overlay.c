@@ -860,7 +860,7 @@ void dss_recheck_connections(struct omap_dss_device *dssdev, bool force)
 		}
 	}
 
-	if (mgr && force) {
+	if (mgr) {
 		dispc_runtime_get();
 
 		for (i = 0; i < dss_feat_get_num_ovls(); i++) {

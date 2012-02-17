@@ -965,12 +965,6 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	/* Software Flow Control Configuration */
 	serial_omap_configure_xonxoff(up, termios);
 
-	/* Now we are ready for RX data: enable rts line */
-	if (up->rts_mux_driver_control && up->rts_pullup_in_suspend) {
-		omap_rts_mux_write(0, up->port.line);
-		up->rts_pullup_in_suspend = 0;
-	}
-
 	spin_unlock_irqrestore(&up->port.lock, flags);
 	serial_omap_port_disable(up);
 	dev_dbg(up->port.dev, "serial_omap_set_termios+%d\n", up->pdev->id);
@@ -1459,8 +1453,8 @@ static int serial_omap_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	if (!request_mem_region(mem->start, (mem->end - mem->start) + 1,
-				     pdev->dev.driver->name)) {
+	if (!request_mem_region(mem->start, resource_size(mem),
+				pdev->dev.driver->name)) {
 		dev_err(&pdev->dev, "memory region already claimed\n");
 		return -EBUSY;
 	}
@@ -1559,7 +1553,7 @@ err:
 err1:
 	kfree(up);
 do_release_region:
-	release_mem_region(mem->start, (mem->end - mem->start) + 1);
+	release_mem_region(mem->start, resource_size(mem));
 	return ret;
 }
 

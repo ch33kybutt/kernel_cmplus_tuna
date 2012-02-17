@@ -1247,11 +1247,8 @@ static void taal_power_off(struct omap_dss_device *dssdev)
 	int r;
 
 	r = taal_dcs_write_0(td, DCS_DISPLAY_OFF);
-	if (!r) {
+	if (!r)
 		r = taal_sleep_in(td);
-		/* HACK: wait a bit so that the message goes through */
-		msleep(10);
-	}
 
 	if (r) {
 		dev_err(&dssdev->dev,
@@ -1906,20 +1903,6 @@ err:
 	mutex_unlock(&td->lock);
 }
 
-static int taal_set_update_mode(struct omap_dss_device *dssdev,
-		enum omap_dss_update_mode mode)
-{
-	if (mode != OMAP_DSS_UPDATE_MANUAL)
-		return -EINVAL;
-	return 0;
-}
-
-static enum omap_dss_update_mode taal_get_update_mode(
-		struct omap_dss_device *dssdev)
-{
-	return OMAP_DSS_UPDATE_MANUAL;
-}
-
 static struct omap_dss_driver taal_driver = {
 	.probe		= taal_probe,
 	.remove		= __exit_p(taal_remove),
@@ -1928,9 +1911,6 @@ static struct omap_dss_driver taal_driver = {
 	.disable	= taal_disable,
 	.suspend	= taal_suspend,
 	.resume		= taal_resume,
-
-	.set_update_mode = taal_set_update_mode,
-	.get_update_mode = taal_get_update_mode,
 
 	.update		= taal_update,
 	.sync		= taal_sync,

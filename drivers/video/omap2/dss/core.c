@@ -265,11 +265,11 @@ static int omap_dss_remove(struct platform_device *pdev)
 
 	dss_uninitialize_debugfs();
 
-	venc_uninit_platform_driver();
-	dispc_uninit_platform_driver();
-	rfbi_uninit_platform_driver();
-	dsi_uninit_platform_driver();
 	hdmi_uninit_platform_driver();
+	dsi_uninit_platform_driver();
+	venc_uninit_platform_driver();
+	rfbi_uninit_platform_driver();
+	dispc_uninit_platform_driver();
 	dss_uninit_platform_driver();
 
 	dss_uninit_overlays(pdev);
