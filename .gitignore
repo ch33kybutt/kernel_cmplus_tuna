@@ -33,6 +33,9 @@ modules.builtin
 *.patch
 *.gcno
 
+# build dir
+build/
+
 #
 # Top-level generic files
 #
