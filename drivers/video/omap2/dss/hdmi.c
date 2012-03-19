@@ -30,10 +30,14 @@
 #include <linux/mutex.h>
 #include <linux/delay.h>
 #include <linux/string.h>
+<<<<<<< HEAD
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
 #include <linux/clk.h>
+=======
+#include <linux/gpio.h>
+>>>>>>> linux-3.0.y
 #include <video/omapdss.h>
 #include <video/hdmi_ti_4xxx_ip.h>
 #include <linux/gpio.h>
@@ -43,6 +47,7 @@
 #include "dss.h"
 #include "dss_features.h"
 
+<<<<<<< HEAD
 #define HDMI_WP			0x0
 #define HDMI_CORE_SYS		0x400
 #define HDMI_CORE_AV		0x900
@@ -58,6 +63,10 @@
 #define EDID_SIZE_BLOCK1_TIMING_DESCRIPTOR	4
 
 #define OMAP_HDMI_TIMINGS_NB			34
+=======
+#define HDMI_DEFAULT_REGN 15
+#define HDMI_DEFAULT_REGM2 1
+>>>>>>> linux-3.0.y
 
 static struct {
 	struct mutex lock;
@@ -74,7 +83,28 @@ static struct {
 	bool custom_set;
 	enum hdmi_deep_color_mode deep_color;
 	struct hdmi_config cfg;
+<<<<<<< HEAD
 	struct regulator *hdmi_reg;
+=======
+
+	int hpd_gpio;
+	bool phy_tx_enabled;
+} hdmi;
+
+/*
+ * Logic for the below structure :
+ * user enters the CEA or VESA timings by specifying the HDMI/DVI code.
+ * There is a correspondence between CEA/VESA timing and code, please
+ * refer to section 6.3 in HDMI 1.3 specification for timing code.
+ *
+ * In the below structure, cea_vesa_timings corresponds to all OMAP4
+ * supported CEA and VESA timing values.code_cea corresponds to the CEA
+ * code, It is used to get the timing from cea_vesa_timing array.Similarly
+ * with code_vesa. Code_index is used for back mapping, that is once EDID
+ * is read from the TV, EDID is parsed to find the timing values and then
+ * map it to corresponding CEA or VESA index.
+ */
+>>>>>>> linux-3.0.y
 
 	int hdmi_irq;
 	struct clk *sys_clk;
@@ -128,9 +158,75 @@ err_get_dss:
 	return r;
 }
 
+<<<<<<< HEAD
 static void hdmi_runtime_put(void)
 {
 	int r;
+=======
+static int hdmi_check_hpd_state(void)
+{
+	unsigned long flags;
+	bool hpd;
+	int r;
+	/* this should be in ti_hdmi_4xxx_ip private data */
+	static DEFINE_SPINLOCK(phy_tx_lock);
+
+	spin_lock_irqsave(&phy_tx_lock, flags);
+
+	hpd = gpio_get_value(hdmi.hpd_gpio);
+
+	if (hpd == hdmi.phy_tx_enabled) {
+		spin_unlock_irqrestore(&phy_tx_lock, flags);
+		return 0;
+	}
+
+	if (hpd)
+		r = hdmi_set_phy_pwr(HDMI_PHYPWRCMD_TXON);
+	else
+		r = hdmi_set_phy_pwr(HDMI_PHYPWRCMD_LDOON);
+
+	if (r) {
+		DSSERR("Failed to %s PHY TX power\n",
+				hpd ? "enable" : "disable");
+		goto err;
+	}
+
+	hdmi.phy_tx_enabled = hpd;
+err:
+	spin_unlock_irqrestore(&phy_tx_lock, flags);
+	return r;
+}
+
+static irqreturn_t hpd_irq_handler(int irq, void *data)
+{
+	hdmi_check_hpd_state();
+
+	return IRQ_HANDLED;
+}
+
+static int hdmi_phy_init(void)
+{
+	u16 r = 0;
+
+	r = hdmi_set_phy_pwr(HDMI_PHYPWRCMD_LDOON);
+	if (r)
+		return r;
+
+	/*
+	 * Read address 0 in order to get the SCP reset done completed
+	 * Dummy access performed to make sure reset is done
+	 */
+	hdmi_read_reg(HDMI_TXPHY_TX_CTRL);
+
+	/*
+	 * Write to phy address 0 to configure the clock
+	 * use HFBITCLK write HDMI_TXPHY_TX_CONTROL_FREQOUT field
+	 */
+	REG_FLD_MOD(HDMI_TXPHY_TX_CTRL, 0x1, 31, 30);
+
+	/* Write to phy address 1 to start HDMI line (TXVALID and TMDSCLKEN) */
+	hdmi_write_reg(HDMI_TXPHY_DIGITAL_CTRL, 0xF0000000);
+>>>>>>> linux-3.0.y
 
 	DSSDBG("hdmi_runtime_put\n");
 
@@ -138,8 +234,35 @@ static void hdmi_runtime_put(void)
 		r = pm_runtime_put_sync(&hdmi.pdev->dev);
 		WARN_ON(r);
 
+<<<<<<< HEAD
 		clk_disable(hdmi.sys_clk);
 		clk_disable(hdmi.hdmi_clk);
+=======
+	r = request_threaded_irq(gpio_to_irq(hdmi.hpd_gpio),
+			NULL, hpd_irq_handler,
+			IRQF_DISABLED | IRQF_TRIGGER_RISING |
+			IRQF_TRIGGER_FALLING, "hpd", NULL);
+	if (r) {
+		DSSERR("HPD IRQ request failed\n");
+		hdmi_set_phy_pwr(HDMI_PHYPWRCMD_OFF);
+		return r;
+	}
+
+	r = hdmi_check_hpd_state();
+	if (r) {
+		free_irq(gpio_to_irq(hdmi.hpd_gpio), NULL);
+		hdmi_set_phy_pwr(HDMI_PHYPWRCMD_OFF);
+		return r;
+	}
+
+	return 0;
+}
+
+static int hdmi_wait_softreset(void)
+{
+	/* reset W1 */
+	REG_FLD_MOD(HDMI_WP_SYSCONFIG, 0x1, 0, 0);
+>>>>>>> linux-3.0.y
 
 		dispc_runtime_put();
 		dss_runtime_put();
@@ -153,8 +276,19 @@ int hdmi_init_display(struct omap_dss_device *dssdev)
 	return 0;
 }
 
+<<<<<<< HEAD
 static int relaxed_fb_mode_is_equal(const struct fb_videomode *mode1,
 				    const struct fb_videomode *mode2)
+=======
+static void hdmi_phy_off(void)
+{
+	free_irq(gpio_to_irq(hdmi.hpd_gpio), NULL);
+	hdmi_set_phy_pwr(HDMI_PHYPWRCMD_OFF);
+	hdmi.phy_tx_enabled = false;
+}
+
+static int hdmi_core_ddc_edid(u8 *pedid, int ext)
+>>>>>>> linux-3.0.y
 {
 	u32 ratio1 = mode1->flag & (FB_FLAG_RATIO_4_3 | FB_FLAG_RATIO_16_9);
 	u32 ratio2 = mode2->flag & (FB_FLAG_RATIO_4_3 | FB_FLAG_RATIO_16_9);
@@ -301,7 +435,11 @@ static void hdmi_compute_pll(struct omap_dss_device *dssdev, int phy,
 	 * Input clock is predivided by N + 1
 	 * out put of which is reference clk
 	 */
-	pi->regn = dssdev->clocks.hdmi.regn;
+	if (dssdev->clocks.hdmi.regn == 0)
+		pi->regn = HDMI_DEFAULT_REGN;
+	else
+		pi->regn = dssdev->clocks.hdmi.regn;
+
 	refclk = clkin / (pi->regn + 1);
 
 	/*
@@ -309,7 +447,11 @@ static void hdmi_compute_pll(struct omap_dss_device *dssdev, int phy,
 	 * Multiplying by 100 to avoid fractional part removal
 	 */
 	pi->regm = (phy * 100 / (refclk)) / 100;
-	pi->regm2 = dssdev->clocks.hdmi.regm2;
+
+	if (dssdev->clocks.hdmi.regm2 == 0)
+		pi->regm2 = HDMI_DEFAULT_REGM2;
+	else
+		pi->regm2 = dssdev->clocks.hdmi.regm2;
 
 	/*
 	 * fractional multiplier is remainder of the difference between
@@ -576,14 +718,19 @@ void omapdss_hdmi_display_set_timing(struct omap_dss_device *dssdev)
 
 int omapdss_hdmi_display_enable(struct omap_dss_device *dssdev)
 {
+	struct omap_dss_hdmi_data *priv = dssdev->data;
 	int r = 0;
 
 	DSSINFO("ENTER hdmi_display_enable\n");
 
 	mutex_lock(&hdmi.lock);
 
+<<<<<<< HEAD
 	if (hdmi.enabled)
 		goto err0;
+=======
+	hdmi.hpd_gpio = priv->hpd_gpio;
+>>>>>>> linux-3.0.y
 
 	r = omap_dss_start_device(dssdev);
 	if (r) {
