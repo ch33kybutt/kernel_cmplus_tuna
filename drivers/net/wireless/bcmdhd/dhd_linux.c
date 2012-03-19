@@ -515,15 +515,21 @@ static void dhd_set_packet_filter(int value, dhd_pub_t *dhd)
 #endif
 }
 
+static int iFastWifi;
+
 static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 {
-#ifndef CONFIG_MACH_ARIES
 	int power_mode = PM_MAX;
-#endif
 	/* wl_pkt_filter_enable_t	enable_parm; */
 	char iovbuf[32];
 	int bcn_li_dtim = 3;
 	uint roamvar = 1;
+
+    // FIXME ( TRY TO SET BY USER )
+    iFastWifi = 1;
+
+    if (iFastWifi == 1)
+        power_mode = PM_FAST;
 
 	DHD_TRACE(("%s: enter, value = %d in_suspend=%d\n",
 		__FUNCTION__, value, dhd->in_suspend));
@@ -535,10 +541,8 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 			/* Kernel suspended */
 			DHD_ERROR(("%s: force extra Suspend setting \n", __FUNCTION__));
 
-#ifndef CONFIG_MACH_ARIES
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode,
 				                 sizeof(power_mode), TRUE, 0);
-#endif
 
 			/* Enable packet filter, only allow unicast packet to send up */
 			dhd_set_packet_filter(1, dhd);
@@ -561,11 +565,9 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 			/* Kernel resumed  */
 			DHD_TRACE(("%s: Remove extra suspend setting \n", __FUNCTION__));
 
-#ifndef CONFIG_MACH_ARIES
 				power_mode = PM_FAST;
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode,
 				                 sizeof(power_mode), TRUE, 0);
-#endif
 
 			/* disable pkt filter */
 			dhd_set_packet_filter(0, dhd);
