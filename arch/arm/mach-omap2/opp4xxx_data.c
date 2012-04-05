@@ -158,7 +158,7 @@ static struct omap_opp_def __initdata omap443x_opp_def_list[] = {
 #define OMAP4460_VDD_MPU_OPPTURBO_UV		1267000
 #define OMAP4460_VDD_MPU_OPPNITRO_UV		1330000
 #define OMAP4460_VDD_MPU_OPPOVERCLOCK_UV	1350000
-#define OMAP4460_VDD_MPU_OPPOVERCLOCK2_UV	1380000
+#define OMAP4460_VDD_MPU_OPPOVERCLOCK2_UV	1360000
 
 struct omap_volt_data omap446x_vdd_mpu_volt_data[] = {
 	VOLT_DATA_DEFINE(OMAP4460_VDD_MPU_OPP50_UV, OMAP44XX_CONTROL_FUSE_MPU_OPP50, 0xf4, 0x0c, OMAP_ABB_NOMINAL_OPP),
@@ -256,7 +256,7 @@ static struct omap_opp_def __initdata omap446x_opp_def_list[] = {
 	 * above this OPP frequency, even though OMAP is capable, should be
 	 * enabled by board file which is sure of the chip power capability
 	 */
-	OPP_INITIALIZER("iva", "dpll_iva_m5x2_ck", "iva", false, 332000000, OMAP4460_VDD_IVA_OPPTURBO_UV),
+	OPP_INITIALIZER("iva", "dpll_iva_m5x2_ck", "iva", true, 332000000, OMAP4460_VDD_IVA_OPPTURBO_UV),
 	/* IVA OPP4 - OPP-Nitro */
 	OPP_INITIALIZER("iva", "dpll_iva_m5x2_ck", "iva", false, 430000000, OMAP4460_VDD_IVA_OPPNITRO_UV),
 	/* IVA OPP5 - OPP-Nitro SpeedBin*/
