@@ -16,7 +16,7 @@
 
 static bool high_perf_mode = false;
 
-static unsigned int volume_boost = 0;
+static unsigned int volume_boost = 2;
 
 #define MAX_VOLUMEBOOST 3
 
