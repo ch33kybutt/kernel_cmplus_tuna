@@ -109,7 +109,6 @@ config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	  loading your cpufreq low-level hardware driver, using the
 	  'interactive' governor for latency-sensitive workloads.
 
-
 config CPU_FREQ_DEFAULT_GOV_HOTPLUG
 	bool "hotplug"
 	select CPU_FREQ_GOV_HOTPLUG
@@ -129,6 +128,14 @@ config CPU_FREQ_DEFAULT_GOV_WHEATLEY
 	select CPU_FREQ_GOV_PERFORMANCE
 	help
 	  Use the CPUFreq governor 'wheatley' as default.
+
+config CPU_FREQ_DEFAULT_GOV_LULZACTIVE
+	bool "lulzactive"
+	select CPU_FREQ_GOV_LULZACTIVE
+	select CPU_FREQ_GOV_INTERACTIVE
+	help
+	  Use the CPUFreq governor 'lulzactive' as default.
+
 endchoice
 
 config CPU_FREQ_GOV_PERFORMANCE
@@ -229,6 +236,14 @@ config CPU_FREQ_GOV_CONSERVATIVE
 config CPU_FREQ_GOV_WHEATLEY
 	tristate "'wheatley' cpufreq governor"
 	depends on CPU_FREQ
+
+config CPU_FREQ_GOV_LULZACTIVE
+	tristate "'lulzactive' cpufreq governor"
+	depends on CPU_FREQ
+	help
+	  'lulzactive' - a new interactive governor by Tegrak!
+
+	  If in doubt, say N.
 
 menu "x86 CPU frequency scaling drivers"
 depends on X86
