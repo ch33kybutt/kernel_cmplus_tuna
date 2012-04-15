@@ -9,6 +9,8 @@
  *
  *  This is the "shell" of the ARMv7 processor support.
  */
+.arch_extension sec
+
 #include <linux/init.h>
 #include <linux/linkage.h>
 #include <asm/assembler.h>
