@@ -133,10 +133,8 @@ build ()
             mka -C "$KERNEL_DIR" O="$target_dir" ARCH=arm HOSTCC="$CCACHE gcc" CROSS_COMPILE="$CCACHE $CROSS_PREFIX" zImage
             RET=$?
             if [[ $RET == 0 ]] ; then
-                cp "$target_dir"/arch/arm/boot/zImage $DEVICE_CM_DIR/kernel
                 cp "$target_dir"/arch/arm/boot/zImage bin/kernel/zImage
                 for module in "${MODULES[@]}" ; do
-                    cp "$target_dir/$module" $DEVICE_CM_DIR
                     cp "$target_dir/$module" bin/system/modules
                 done
                 CheckVersion
