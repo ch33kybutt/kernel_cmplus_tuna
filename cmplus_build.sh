@@ -73,12 +73,10 @@ then
 	echo ""
 	echo "*** Making external modules ..."
 	echo ""
-	cp -av $MY_DEST_DIR/template-cmplus $MY_BUILD_DIR/$DTSTAMP
-	cp -av arch/arm/boot/zImage $MY_BUILD_DIR/$DTSTAMP/kernel/
-	#cp -av drivers/net/wireless/bcm4329/bcm4329.ko $MY_BUILD_DIR/$DTSTAMP/system/lib/modules/
-	make modules_install INSTALL_MOD_PATH=./temp
-	#$CROSS_COMPILE"strip" --strip-unneeded -v temp/lib/modules/*
-	cp -av temp/lib/modules/$VERSION-$CONFIG/kernel/* $MY_BUILD_DIR/$DTSTAMP/system/modules
+	cp -av $MY_DEST_DIR/template-cmplus $MY_BUILD_DIR/$DTSTAMP >> build.log
+	cp -av arch/arm/boot/zImage $MY_BUILD_DIR/$DTSTAMP/kernel/ >> build.log
+	make modules_install INSTALL_MOD_PATH=./temp >> build.log
+	cp -av temp/lib/modules/$VERSION-$CONFIG/kernel/* $MY_BUILD_DIR/$DTSTAMP/system/modules >> build.log
 	rm -r temp
 	echo ""
 	echo "*** Creating signed zip file for recovery ..."
@@ -86,10 +84,10 @@ then
 	cd $MY_BUILD_DIR/$DTSTAMP
 	#echo "ui_print(\"Successfully installed ...\");" >> META-INF/com/google/android/updater-script
 	#echo "ui_print(\"$FILENAME.zip\");" >> META-INF/com/google/android/updater-script
-	zip -rTy $FILENAME.zip *
+	zip -rTy $FILENAME.zip * >> build.log
 	java -Xmx512m -jar $MY_SIGNAPK/signapk.jar -w $MY_SIGNAPK/testkey.x509.pem $MY_SIGNAPK/testkey.pk8 $FILENAME.zip ../$FILENAME.zip
 	cd $MY_BUILD_DIR
-	mv $FILENAME.zip $MY_DEST_DIR/.
+	mv $FILENAME.zip $MY_DEST_DIR/. >> build.log
 	rm -r $DTSTAMP
 	echo "";
 	echo "[ Build STARTED : $START ]"
