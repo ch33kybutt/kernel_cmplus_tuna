@@ -54,7 +54,12 @@ esac
 export CROSS_COMPILE=$MY_CC
 VERSION=`cat .config | grep Linux | awk '{print $(3)}'`
 DTSTAMP=$(date +%y%m%d%H%M);
-FILENAME="$VERSION-$CONFIG-$DTSTAMP";
+if [ $1 ]
+then
+	FILENAME="$VERSION-$CONFIG-$DTSTAMP-$1";
+else
+	FILENAME="$VERSION-$CONFIG-$DTSTAMP";
+fi;
 echo `expr $DTSTAMP "-" 1` > .version
 sed -i "s/^CONFIG_LOCALVERSION.*/CONFIG_LOCALVERSION=\"-$CONFIG\"/g" .config
 echo ""
@@ -73,7 +78,7 @@ then
 	#cp -av drivers/net/wireless/bcm4329/bcm4329.ko $MY_BUILD_DIR/$DTSTAMP/system/lib/modules/
 	make modules_install INSTALL_MOD_PATH=./temp
 	#$CROSS_COMPILE"strip" --strip-unneeded -v temp/lib/modules/*
-	cp -av temp/lib/modules/* $MY_BUILD_DIR/$DTSTAMP/system/lib/modules
+	cp -av temp/lib/modules/$VERSION-$CONFIG/kernel/* $MY_BUILD_DIR/$DTSTAMP/system/modules
 	rm -r temp
 	echo ""
 	echo "*** Creating signed zip file for recovery ..."
