@@ -949,6 +949,10 @@ static int cpufreq_add_dev(struct sys_device *sys_dev)
     if (policy->max > SafeBootSpeed)
         policy->max = SafeBootSpeed;
 
+    // Set min speed at boot to 350Mhz
+	if (policy->min < 350000)
+		policy->min = 350000;
+
 	policy->user_policy.min = policy->min;
 	policy->user_policy.max = policy->max;
 
