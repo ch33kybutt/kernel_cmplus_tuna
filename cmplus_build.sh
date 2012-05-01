@@ -58,7 +58,7 @@ case $choice in
 esac
 export CROSS_COMPILE=$MY_CC
 VERSION=`cat .config | grep Linux | awk '{print $(3)}'`
-DTSTAMP=$(date +%y%m%d%H%M);
+DTSTAMP=$(date +%y%m%d);
 if [ $1 ]
 then
 	FILENAME="$VERSION-$CONFIG-$DTSTAMP-$1";
