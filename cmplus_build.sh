@@ -24,32 +24,37 @@ echo "   [2] Custom GCC-4.6.3"
 echo "   [3] Custom GCC-4.7.0"
 echo "   [4] Custom GCC-4.8.0"
 echo "   [5] Linaro GCC-4.5.4"
-echo "   [*] Linaro GCC-4.6.3"
+echo "   [6] Linaro GCC-4.6.3"
+echo "   [*] Linaro GCC-4.6.4"
 read choice;
 case $choice in
-	"1") echo "*** Using Google GCC-4.4.3 toolchain ...";
-	     MY_CC=$HOME/toolchain/arm-eabi-4.4.3/bin/arm-eabi-;
-	     CONFIG="$CONFIG-gcc443";;
+	1) 	echo "*** Using Google GCC-4.4.3 toolchain ...";
+		MY_CC=$HOME/toolchain/arm-eabi-4.4.3/bin/arm-eabi-;
+		CONFIG="$CONFIG-gcc443";;
 
-	"2") echo "*** Using Custom GCC-4.6.3 toolchain ...";
-	     MY_CC=$HOME/toolchain/x-tools/gcc-4.6.3/bin/arm-tuna-eabi-;
-	     CONFIG="$CONFIG-gcc463";;
+	2) 	echo "*** Using Custom GCC-4.6.3 toolchain ...";
+		MY_CC=$HOME/toolchain/x-tools/gcc-4.6.3/bin/arm-tuna-eabi-;
+		CONFIG="$CONFIG-gcc463";;
 
-	"3") echo "*** Using Custom GCC-4.7.0 toolchain ...";
-	     MY_CC=$HOME/toolchain/x-tools/gcc-4.7.0/bin/arm-tuna-eabi-;
-	     CONFIG="$CONFIG-gcc470";;
+	3) 	echo "*** Using Custom GCC-4.7.0 toolchain ...";
+		MY_CC=$HOME/toolchain/x-tools/gcc-4.7.0/bin/arm-tuna-eabi-;
+		CONFIG="$CONFIG-gcc470";;
 
-	"4") echo "*** Using Custom GCC-4.8.0 toolchain ...";
-	     MY_CC=$HOME/toolchain/x-tools/gcc-4.8.0/bin/arm-tuna-eabi-;
-	     CONFIG="$CONFIG-gcc480";;
+	4) 	echo "*** Using Custom GCC-4.8.0 toolchain ...";
+		MY_CC=$HOME/toolchain/x-tools/gcc-4.8.0/bin/arm-tuna-eabi-;
+		CONFIG="$CONFIG-gcc480";;
 
-	"5")   echo "*** Using Custom Linaro-4.5.4 toolchain ...";
-	     MY_CC=$HOME/toolchain/x-tools/linaro-4.5.4/bin/arm-tuna-eabi-;
-	     CONFIG="$CONFIG-lin454";;
+	5)	echo "*** Using Custom Linaro-4.5.4 toolchain ...";
+		MY_CC=$HOME/toolchain/x-tools/linaro-4.5.4/bin/arm-tuna-eabi-;
+		CONFIG="$CONFIG-lin454";;
 
-	*)   echo "*** Using Custom Linaro-4.6.3 toolchain ...";
-	     MY_CC=$HOME/toolchain/x-tools/linaro-4.6.3/bin/arm-tuna-eabi-;
-	     CC="lin463";;
+	6)	echo "*** Using Custom Linaro-4.6.3 toolchain ...";
+		MY_CC=$HOME/toolchain/x-tools/linaro-4.6.3/bin/arm-tuna-eabi-;
+		CONFIG="$CONFIG-lin463";;
+
+	*)	echo "*** Using Custom Linaro-4.6.4 toolchain ...";
+		MY_CC=$HOME/toolchain/x-tools/linaro-4.6.3/bin/arm-tuna-eabi-;
+		CC="lin464";;
 esac
 export CROSS_COMPILE=$MY_CC
 VERSION=`cat .config | grep Linux | awk '{print $(3)}'`
