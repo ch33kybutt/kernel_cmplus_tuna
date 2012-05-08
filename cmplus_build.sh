@@ -53,7 +53,7 @@ case $choice in
 		CONFIG="$CONFIG-lin463";;
 
 	*)	echo "*** Using Custom Linaro-4.6.4 toolchain ...";
-		MY_CC=$HOME/toolchain/x-tools/linaro-4.6.3/bin/arm-tuna-eabi-;
+		MY_CC=$HOME/toolchain/x-tools/linaro-4.6.4/bin/arm-tuna-eabi-;
 		CC="lin464";;
 esac
 export CROSS_COMPILE=$MY_CC
