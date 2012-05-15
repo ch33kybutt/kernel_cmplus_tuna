@@ -158,13 +158,13 @@ static __initdata struct cpuidle_params omap446x_cpuidle_params_table[] = {
 	},
 	/* C3 - CPUx OFF + MPU CSWR + CORE OSWR */
 	{
-		.exit_latency = 4000,
+		.exit_latency = 1200,
 		.target_residency = 4000,
 		.valid = 1,
 	},
 	/* C4 - CPUx OFF + MPU CSWR + CORE OSWR */
 	{
-		.exit_latency = 4200,
+		.exit_latency = 1400,
 		.target_residency = 4200,
 		.valid = CPU_IDLE_ALLOW_OSWR,
 	},
