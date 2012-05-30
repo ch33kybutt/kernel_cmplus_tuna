@@ -246,4 +246,21 @@ static inline bool gadget_supports_altsettings(struct usb_gadget *gadget)
 	return true;
 }
 
+/**
+ * gadget_dma32 - return true if we want buffer aligned on 32 bits (for dma)
+ * @gadget: the gadget in question
+ */
+static inline bool gadget_dma32(struct usb_gadget *gadget)
+{
+#ifdef CONFIG_USB_GADGET_S3C_OTGD_DMA_MODE
+  if (gadget_is_s3c(gadget))
+    return true;
+  return false;
+#else
+  if (gadget_is_musbhdrc(gadget))
+    return true;
+  return false;
+#endif
+}
+
 #endif /* __GADGET_CHIPS_H */
