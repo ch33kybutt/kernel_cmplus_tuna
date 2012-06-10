@@ -25,7 +25,8 @@ echo "   [3] Custom GCC-4.7.0"
 echo "   [4] Custom GCC-4.8.0"
 echo "   [5] Linaro GCC-4.5.4"
 echo "   [6] Linaro GCC-4.6.3"
-echo "   [*] Linaro GCC-4.6.4"
+echo "   [7] Linaro GCC-4.6.4"
+echo "   [*] Linaro GCC-4.7.1"
 read choice;
 case $choice in
 	1) 	echo "*** Using Google GCC-4.4.3 toolchain ...";
@@ -52,9 +53,13 @@ case $choice in
 		MY_CC=$HOME/toolchain/x-tools/linaro-4.6.3/bin/arm-tuna-eabi-;
 		CONFIG="$CONFIG-lin463";;
 
-	*)	echo "*** Using Custom Linaro-4.6.4 toolchain ...";
+	7)	echo "*** Using Custom Linaro-4.6.4 toolchain ...";
 		MY_CC=$HOME/toolchain/x-tools/linaro-4.6.4/bin/arm-tuna-eabi-;
-		CC="lin464";;
+		CONFIG="$CONFIG-lin464";;
+
+	*)	echo "*** Using Custom Linaro-4.7.1 toolchain ...";
+		MY_CC=$HOME/toolchain/x-tools/linaro-4.7.1/bin/arm-tuna-eabi-;
+		CC="lin471";;
 esac
 export CROSS_COMPILE=$MY_CC
 VERSION=`cat .config | grep Linux | awk '{print $(3)}'`
