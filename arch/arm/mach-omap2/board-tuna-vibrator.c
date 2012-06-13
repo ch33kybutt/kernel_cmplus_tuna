@@ -21,10 +21,6 @@
 #include <asm/mach-types.h>
 #include <plat/dmtimer.h>
 
-#ifdef CONFIG_VIBRATOR_CONTROL
-#include <linux/delay.h>
-#endif
-
 #include <../../../drivers/staging/android/timed_output.h>
 
 #include "mux.h"
@@ -48,20 +44,18 @@ static struct vibrator {
 } vibdata;
 
 #ifdef CONFIG_VIBRATOR_CONTROL
+static DEFINE_MUTEX(vib_enabled);
+
 extern void vibratorcontrol_register_vibstrength(int vibstrength);
 
 void vibratorcontrol_update(int vibstrength)
 {
-    while (vibdata.enabled || !mutex_trylock(&vibdata.lock))
-	msleep(50);
+    mutex_lock(&vib_enabled);
 
     omap_dm_timer_set_load(vibdata.gptimer, 1, -vibstrength);
-    vibdata.gptimer->context.tldr = (unsigned int)-vibstrength;
-
     omap_dm_timer_set_match(vibdata.gptimer, 1, -vibstrength+10);
-    vibdata.gptimer->context.tmar = (unsigned int)(-vibstrength+10);
 
-    mutex_unlock(&vibdata.lock);
+    mutex_unlock(&vib_enabled);
 
     return;
 }
@@ -75,6 +69,11 @@ static void vibrator_off(void)
 	omap_dm_timer_stop(vibdata.gptimer);
 	gpio_set_value(vibdata.gpio_en, 0);
 	vibdata.enabled = false;
+
+#ifdef CONFIG_VIBRATOR_CONTROL
+	mutex_unlock(&vib_enabled);
+#endif
+
 	wake_unlock(&vibdata.wklock);
 }
 
@@ -102,6 +101,10 @@ static void vibrator_enable(struct timed_output_dev *dev, int value)
 		omap_dm_timer_start(vibdata.gptimer);
 
 		vibdata.enabled = true;
+
+#ifdef CONFIG_VIBRATOR_CONTROL
+		mutex_lock(&vib_enabled);
+#endif
 
 		if (value > 0) {
 			if (value > MAX_TIMEOUT)
