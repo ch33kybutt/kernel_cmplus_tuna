@@ -11,7 +11,7 @@ CONFIG="CMPlus-Tuna"
 MY_BUILD_DIR=$(pwd)
 MY_DEST_DIR=$HOME/Dropbox/GNex/kernel
 MY_SIGNAPK=$HOME/Dropbox/GNex/signapk
-MY_KFLAGS="-march=armv7-a -mtune=cortex-a9 -mfpu=neon"
+MY_KFLAGS="-march=armv7-a -mcpu=cortex-a9 -mtune=cortex-a9 -mfpu=neon -ffast-math -finline-functions -funswitch-loops -fpredictive-commoning -fgcse-after-reload -ftree-vectorize -fipa-cp-clone -fmodulo-sched -fmodulo-sched-allow-regmoves -pipe"
 export ARCH=arm
 export KCFLAGS=$MY_KFLAGS
 export KAFLAGS=$MY_KFLAGS
