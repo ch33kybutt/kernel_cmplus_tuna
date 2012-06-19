@@ -11,14 +11,16 @@ CONFIG="CMPlus-Tuna"
 MY_BUILD_DIR=$(pwd)
 MY_DEST_DIR=$HOME/Dropbox/GNex/kernel
 MY_SIGNAPK=$HOME/Dropbox/GNex/signapk
-MY_KFLAGS="-march=armv7-a -mcpu=cortex-a9 -mtune=cortex-a9 -mfpu=neon -ffast-math -finline-functions -funswitch-loops -fpredictive-commoning -fgcse-after-reload -ftree-vectorize -fipa-cp-clone -fmodulo-sched -fmodulo-sched-allow-regmoves -pipe"
+MY_KFLAGS="-march=armv7-a -mcpu=cortex-a9 -mtune=cortex-a9 -mfpu=neon"
+# -ffast-math -finline-functions -funswitch-loops -fpredictive-commoning -fgcse-after-reload -ftree-vectorize -fipa-cp-clone -fmodulo-sched -fmodulo-sched-allow-regmoves -pipe"
 export ARCH=arm
 export KCFLAGS=$MY_KFLAGS
-export KAFLAGS=$MY_KFLAGS
+#export KAFLAGS=$MY_KFLAGS
 #echo "*** Running make clean ..."
 #make clean
 #echo
 echo "Please select toolchain ..."
+echo "   [0] NEWLY BUILT TOOLCHAIN"
 echo "   [1] Google GCC-4.4.3"
 echo "   [2] Custom GCC-4.6.3"
 echo "   [3] Custom GCC-4.7.0"
@@ -29,6 +31,10 @@ echo "   [7] Linaro GCC-4.6.4"
 echo "   [*] Linaro GCC-4.7.1"
 read choice;
 case $choice in
+	0) 	echo "*** Using NEWLY BUILT TOOLCHAIN ...";
+		MY_CC=$HOME/toolchain/x-tools/arm-tuna-eabi/bin/arm-tuna-eabi-;
+		CONFIG="$CONFIG-TEST";;
+
 	1) 	echo "*** Using Google GCC-4.4.3 toolchain ...";
 		MY_CC=$HOME/toolchain/arm-eabi-4.4.3/bin/arm-eabi-;
 		CONFIG="$CONFIG-gcc443";;
